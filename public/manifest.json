@@ -1,0 +1,19 @@
+{
+  "name": "Bell Street Diary",
+  "short_name": "Bell Street",
+  "description": "Professional barber diary for Bell Street Barbers.",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFFFF",
+  "theme_color": "#0F172A",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
