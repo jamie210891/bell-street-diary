@@ -22,3 +22,84 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* Premium polish variables */
+:root {
+  --bs-radius: 20px;
+  --bs-radius-lg: 28px;
+  --bs-shadow-soft: 0 10px 30px rgba(2,6,23,0.08);
+  --bs-shadow-elev: 0 18px 55px rgba(15,23,42,0.08);
+  --bs-glass: rgba(255,255,255,0.06);
+  --bs-transition: 220ms cubic-bezier(.2,.8,.2,1);
+}
+
+/* Apply consistent radii to Tailwind rounded utilities used across the app */
+.rounded-2xl,
+.rounded-full,
+.rounded-lg,
+.rounded-xl {
+  border-radius: var(--bs-radius) !important;
+}
+
+/* Softer shadows */
+.shadow-lg,
+.shadow-xl,
+.shadow-2xl {
+  box-shadow: var(--bs-shadow-elev) !important;
+}
+.shadow-sm,
+.shadow {
+  box-shadow: var(--bs-shadow-soft) !important;
+}
+
+/* Buttons: larger, touch-friendly, better hover/focus */
+button,
+.btn {
+  transition: transform var(--bs-transition), box-shadow var(--bs-transition), background-color var(--bs-transition);
+  will-change: transform;
+}
+button:active { transform: translateY(1px) scale(0.998); }
+button:focus-visible { outline: 2px solid rgba(59,130,246,0.18); outline-offset: 3px; }
+
+/* Inputs and selects: smoother focus */
+input:focus,
+select:focus,
+textarea:focus {
+  box-shadow: 0 6px 24px rgba(59,130,246,0.06);
+  transition: box-shadow var(--bs-transition), border-color var(--bs-transition);
+}
+
+/* Global transition default for Tailwind .transition class */
+.transition {
+  transition-duration: var(--bs-transition) !important;
+  transition-timing-function: cubic-bezier(.2,.8,.2,1) !important;
+}
+
+/* Glass effect helpers */
+.bs-glass {
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+  backdrop-filter: blur(6px);
+}
+
+/* Skeleton loader */
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.2s linear infinite;
+}
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Typography adjustments */
+h1 { font-size: 1.75rem; line-height: 1.05; }
+h2 { font-size: 1.375rem; }
+h3 { font-size: 1.125rem; }
+
+/* Responsive tweaks */
+@media (min-width: 768px) {
+  :root { --bs-radius: 22px; }
+  h1 { font-size: 2rem; }
+}
+
