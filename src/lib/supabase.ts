@@ -28,7 +28,14 @@ export type CustomerRecord = {
   preferred_service?: string | null;
   last_visit?: string | null;
   notes?: string | null;
+  archived?: boolean | null;
   is_archived?: boolean | null;
+};
+
+type CustomerMutationResult = {
+  data: CustomerRecord | null;
+  error: unknown | null;
+  affectedRows: number;
 };
 
 export type CustomerInsert = {
@@ -80,7 +87,33 @@ export async function getCustomersFromSupabase(): Promise<CustomerRecord[]> {
     return [];
   }
 
-  return (data ?? []) as CustomerRecord[];
+  const rows = (data ?? []) as Array<CustomerRecord & { id?: string | null }>;
+  const validRows = rows.filter((row): row is CustomerRecord => typeof row.id === 'string' && row.id.length > 0);
+
+  if (rows.length > 0) {
+    const sampleKeys = Object.keys(rows[0] ?? {});
+    console.log('Customer column check (sample row keys):', sampleKeys);
+    console.log('Customer field mapping used by app:', {
+      id: 'id',
+      name: 'full_name',
+      phone: 'mobile|phone',
+      favoriteService: 'preferred_service',
+      lastVisit: 'last_visit',
+      note: 'notes',
+      archived: 'archived|is_archived',
+    });
+  }
+
+  if (validRows.length !== rows.length) {
+    console.warn('Some customer rows were missing an id and were skipped.', {
+      totalRows: rows.length,
+      validRows: validRows.length,
+    });
+  }
+
+  console.log('Loaded customers from Supabase with ids:', validRows.map((row) => row.id));
+
+  return validRows;
 }
 
 export async function createCustomerInSupabase(payload: CustomerInsert): Promise<{ data: CustomerRecord | null; error: unknown | null }> {
@@ -103,26 +136,26 @@ export async function createCustomerInSupabase(payload: CustomerInsert): Promise
 export async function updateCustomerInSupabase(
   customerId: string,
   payload: CustomerUpdate,
-): Promise<{ data: CustomerRecord | null; error: unknown | null }> {
+): Promise<CustomerMutationResult> {
   if (!supabaseUrl || !supabaseAnonKey) {
     const error = new Error('Cannot update customer: Supabase environment variables are missing.');
     console.error(error);
-    return { data: null, error };
+    return { data: null, error, affectedRows: 0 };
   }
 
   const { data, error } = await supabase
     .from('customers')
     .update(payload)
     .eq('id', customerId)
-    .select()
-    .maybeSingle();
+    .select();
 
   if (error) {
     console.error('Unable to update customer in Supabase:', error);
-    return { data: null, error };
+    return { data: null, error, affectedRows: 0 };
   }
 
-  return { data: data as CustomerRecord | null, error: null };
+  const rows = (data ?? []) as CustomerRecord[];
+  return { data: rows[0] ?? null, error: null, affectedRows: rows.length };
 }
 
 export async function createAppointmentInSupabase(payload: AppointmentPayload) {
@@ -160,21 +193,21 @@ export async function customerHasAppointmentsInSupabase(customerId: string): Pro
   return { hasAppointments: (count ?? 0) > 0, error: null };
 }
 
-export async function deleteCustomerInSupabase(customerId: string): Promise<{ error: unknown | null }> {
+export async function deleteCustomerInSupabase(customerId: string): Promise<{ error: unknown | null; affectedRows: number }> {
   if (!supabaseUrl || !supabaseAnonKey) {
     const error = new Error('Cannot delete customer: Supabase environment variables are missing.');
     console.error(error);
-    return { error };
+    return { error, affectedRows: 0 };
   }
 
-  const { error } = await supabase.from('customers').delete().eq('id', customerId);
+  const { data, error } = await supabase.from('customers').delete().eq('id', customerId).select('id');
 
   if (error) {
     console.error('Unable to delete customer in Supabase:', error);
-    return { error };
+    return { error, affectedRows: 0 };
   }
 
-  return { error: null };
+  return { error: null, affectedRows: (data ?? []).length };
 }
 
 const ARCHIVE_NOTE_PREFIX = '[ARCHIVED] ';
@@ -190,30 +223,49 @@ const stripArchivePrefix = (notes: string | null | undefined) => {
 export async function setCustomerArchivedStateInSupabase(
   customerId: string,
   isArchived: boolean,
-): Promise<{ data: CustomerRecord | null; error: unknown | null }> {
+): Promise<CustomerMutationResult> {
   if (!supabaseUrl || !supabaseAnonKey) {
     const error = new Error('Cannot archive customer: Supabase environment variables are missing.');
     console.error(error);
-    return { data: null, error };
+    return { data: null, error, affectedRows: 0 };
   }
 
-  const { data, error } = await supabase
+  const byArchived = await supabase
+    .from('customers')
+    .update({ archived: isArchived })
+    .eq('id', customerId)
+    .select();
+
+  if (!byArchived.error) {
+    const rows = (byArchived.data ?? []) as CustomerRecord[];
+    return { data: rows[0] ?? null, error: null, affectedRows: rows.length };
+  }
+
+  const archivedMessage = (byArchived.error as { message?: string } | null)?.message ?? '';
+  const missingArchivedColumn = archivedMessage.includes('archived');
+
+  if (!missingArchivedColumn) {
+    console.error('Unable to update archived state in Supabase:', byArchived.error);
+    return { data: null, error: byArchived.error, affectedRows: 0 };
+  }
+
+  const byIsArchived = await supabase
     .from('customers')
     .update({ is_archived: isArchived })
     .eq('id', customerId)
-    .select()
-    .maybeSingle();
+    .select();
 
-  if (!error) {
-    return { data: data as CustomerRecord | null, error: null };
+  if (!byIsArchived.error) {
+    const rows = (byIsArchived.data ?? []) as CustomerRecord[];
+    return { data: rows[0] ?? null, error: null, affectedRows: rows.length };
   }
 
-  const message = (error as { message?: string } | null)?.message ?? '';
-  const missingColumn = message.includes('is_archived');
+  const isArchivedMessage = (byIsArchived.error as { message?: string } | null)?.message ?? '';
+  const missingIsArchivedColumn = isArchivedMessage.includes('is_archived');
 
-  if (!missingColumn) {
-    console.error('Unable to update archive state in Supabase:', error);
-    return { data: null, error };
+  if (!missingIsArchivedColumn) {
+    console.error('Unable to update archive state in Supabase:', byIsArchived.error);
+    return { data: null, error: byIsArchived.error, affectedRows: 0 };
   }
 
   const { data: existingCustomer, error: fetchError } = await supabase
@@ -224,11 +276,11 @@ export async function setCustomerArchivedStateInSupabase(
 
   if (fetchError) {
     console.error('Unable to load customer for archive fallback:', fetchError);
-    return { data: null, error: fetchError };
+    return { data: null, error: fetchError, affectedRows: 0 };
   }
 
   if (!existingCustomer) {
-    return { data: null, error: null };
+    return { data: null, error: null, affectedRows: 0 };
   }
 
   const cleanNotes = stripArchivePrefix((existingCustomer as CustomerRecord).notes);
@@ -238,20 +290,21 @@ export async function setCustomerArchivedStateInSupabase(
     .from('customers')
     .update({ notes: fallbackNotes })
     .eq('id', customerId)
-    .select()
-    .maybeSingle();
+    .select();
 
   if (fallbackError) {
     console.error('Unable to archive customer via notes fallback:', fallbackError);
-    return { data: null, error: fallbackError };
+    return { data: null, error: fallbackError, affectedRows: 0 };
   }
 
-  const archivedRecord = fallbackData
-    ? ({ ...(fallbackData as CustomerRecord), is_archived: isArchived } as CustomerRecord)
+  const fallbackRows = (fallbackData ?? []) as CustomerRecord[];
+  const archivedRecord = fallbackRows[0]
+    ? ({ ...fallbackRows[0], is_archived: isArchived, archived: isArchived } as CustomerRecord)
     : null;
 
   return {
     data: archivedRecord,
     error: null,
+    affectedRows: fallbackRows.length,
   };
 }

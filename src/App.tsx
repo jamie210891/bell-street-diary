@@ -566,11 +566,17 @@ function App() {
       notes: trimmedNotes || null,
     };
 
-    const { error } = await updateCustomerInSupabase(customerIdToUpdate, customerPayload);
+    const { error, affectedRows } = await updateCustomerInSupabase(customerIdToUpdate, customerPayload);
 
     if (error) {
       const message = (error as { message?: string } | null)?.message ?? 'Unknown error while saving customer changes.';
       setEditCustomerError(`Could not save customer changes: ${message}`);
+      setIsUpdatingCustomer(false);
+      return;
+    }
+
+    if (affectedRows === 0) {
+      setEditCustomerError('No matching customer found to update/delete.');
       setIsUpdatingCustomer(false);
       return;
     }
@@ -654,6 +660,12 @@ function App() {
       return;
     }
 
+    if (result.affectedRows === 0) {
+      setEditCustomerError('No matching customer found to update/delete.');
+      setIsDeletingCustomer(false);
+      return;
+    }
+
     setCustomers((current) =>
       deleteActionType === 'delete'
         ? current.filter((customer) => customer.id !== customerId)
@@ -671,11 +683,16 @@ function App() {
 
   const handleRestoreArchivedCustomer = async (customerId: string) => {
     setEditCustomerError(null);
-    const { error } = await setCustomerArchivedStateInSupabase(customerId, false);
+    const { error, affectedRows } = await setCustomerArchivedStateInSupabase(customerId, false);
 
     if (error) {
       const message = (error as { message?: string } | null)?.message ?? 'Unknown error while restoring customer.';
       setEditCustomerError(`Could not restore customer: ${message}`);
+      return;
+    }
+
+    if (affectedRows === 0) {
+      setEditCustomerError('No matching customer found to update/delete.');
       return;
     }
 
@@ -1244,6 +1261,7 @@ function App() {
                                 {customer.name}
                               </p>
                               <p className="text-sm text-slate-500">{customer.phone}</p>
+                              <p className="text-xs text-slate-400">ID: {customer.id}</p>
                             </div>
                             <span className="ml-3 text-sm text-slate-400">{customer.note}</span>
                           </button>
