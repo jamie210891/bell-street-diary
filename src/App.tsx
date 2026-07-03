@@ -209,8 +209,19 @@ const formatUkPhoneForLinks = (phone: string) => {
   return cleaned.replace(/\+/g, '');
 };
 
-const getAppointmentMessage = (customerName: string, date: string, time: string, service: string) =>
-  `Hi ${customerName}, just confirming your appointment at Bell Street Barbers on ${date} at ${time} for ${service}. Please arrive on time with freshly washed hair. If you need to change anything, please let me know. Thanks, Jamie.`;
+const getAppointmentMessage = (_customerName: string, date: string, time: string, _service: string) => {
+  const parsedDate = new Date(`${date}T00:00:00`);
+  const fullDate = Number.isNaN(parsedDate.getTime())
+    ? date
+    : parsedDate.toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+
+  return `CONFIRMATION: YOUR appointment @ The Bell Street Barber is booked for: ${time} on ${fullDate}.\nPlease arrive punctually and with freshly washed hair.\nAppointments made more than two days in advance may be cancelled, provided 48 hours notice is received. Late cancellations, or no shows, may incur an £11 charge per person per appointment. Thank you for your understanding, and I look forward to offering you a friendly and excellent service.\nWith kind regards, — Jamie.\nTel: 📞 07875282389\n18 Bell Street, Henley-on-Thames RG9 2BG`;
+};
 
 const formatSupabaseUiError = (prefix: string, error: unknown) => {
   const supabaseError = error as {
