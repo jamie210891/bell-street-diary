@@ -3,13 +3,19 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-// Debug: Log if Supabase key is loaded
+// Debug: Log exact configuration
 const keyLoaded = !!(supabaseUrl && supabasePublishableKey);
-console.log('🔑 Supabase key loaded:', keyLoaded ? 'yes' : 'no');
+const keyPreview = supabasePublishableKey ? supabasePublishableKey.substring(0, 20) : 'UNDEFINED';
+console.log('🔑 Supabase Configuration:');
+console.log('   URL:', supabaseUrl);
+console.log('   Key (first 20 chars):', keyPreview);
+console.log('   Key loaded:', keyLoaded ? 'yes' : 'no');
 if (!keyLoaded) {
   console.error('⚠️ Supabase configuration incomplete:', {
     hasUrl: !!supabaseUrl,
     hasKey: !!supabasePublishableKey,
+    url: supabaseUrl,
+    keyFirst20: keyPreview,
   });
 }
 
@@ -45,9 +51,10 @@ export type AppointmentPayload = {
 
 if (!supabaseUrl || !supabasePublishableKey) {
   console.error('Supabase environment variables are not set. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to connect to Supabase.');
+  throw new Error('Cannot initialize Supabase: VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY is missing');
 }
 
-export const supabase = createClient(supabaseUrl ?? '', supabasePublishableKey ?? '');
+export const supabase = createClient(supabaseUrl, supabasePublishableKey);
 
 export async function getCustomersFromSupabase(): Promise<CustomerRecord[]> {
   if (!supabaseUrl || !supabasePublishableKey) {
