@@ -1,7 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+// Debug: Log if Supabase key is loaded
+const keyLoaded = !!(supabaseUrl && supabasePublishableKey);
+console.log('🔑 Supabase key loaded:', keyLoaded ? 'yes' : 'no');
+if (!keyLoaded) {
+  console.error('⚠️ Supabase configuration incomplete:', {
+    hasUrl: !!supabaseUrl,
+    hasKey: !!supabasePublishableKey,
+  });
+}
 
 export type CustomerRecord = {
   id: string;
@@ -33,14 +43,14 @@ export type AppointmentPayload = {
   sms_reminder?: boolean;
 };
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase environment variables are not set. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to connect to Supabase.');
+if (!supabaseUrl || !supabasePublishableKey) {
+  console.error('Supabase environment variables are not set. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to connect to Supabase.');
 }
 
-export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '');
+export const supabase = createClient(supabaseUrl ?? '', supabasePublishableKey ?? '');
 
 export async function getCustomersFromSupabase(): Promise<CustomerRecord[]> {
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabasePublishableKey) {
     console.error('Cannot load customers: Supabase environment variables are missing.');
     return [];
   }
@@ -56,7 +66,7 @@ export async function getCustomersFromSupabase(): Promise<CustomerRecord[]> {
 }
 
 export async function createCustomerInSupabase(payload: CustomerInsert): Promise<{ data: CustomerRecord | null; error: unknown | null }> {
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabasePublishableKey) {
     const error = new Error('Cannot save customer: Supabase environment variables are missing.');
     console.error(error);
     return { data: null, error };
@@ -73,7 +83,7 @@ export async function createCustomerInSupabase(payload: CustomerInsert): Promise
 }
 
 export async function createAppointmentInSupabase(payload: AppointmentPayload) {
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabasePublishableKey) {
     return null;
   }
 
