@@ -4,6 +4,7 @@ import {
   createAppointmentInSupabase,
   createCustomerInSupabase,
   getCustomersFromSupabase,
+  updateCustomerInSupabase,
   type CustomerRecord,
 } from './lib/supabase';
 
@@ -78,7 +79,7 @@ const initialAppointments: Appointment[] = [
 const mapCustomerRecord = (customer: CustomerRecord): Customer => ({
   id: customer.id,
   name: customer.full_name ?? 'Unknown customer',
-  phone: customer.phone ?? 'No phone provided',
+  phone: customer.phone ?? customer.mobile ?? 'No phone provided',
   favoriteService: customer.preferred_service ?? 'Classic Cut',
   lastVisit: customer.last_visit ?? 'Not booked yet',
   note: customer.notes ?? 'No notes yet',
@@ -196,6 +197,16 @@ function App() {
   const [customerFormNotes, setCustomerFormNotes] = useState('');
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [customerError, setCustomerError] = useState<string | null>(null);
+  const [customerSuccessMessage, setCustomerSuccessMessage] = useState<string | null>(null);
+  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [editCustomerFormName, setEditCustomerFormName] = useState('');
+  const [editCustomerFormPhone, setEditCustomerFormPhone] = useState('');
+  const [editCustomerFormService, setEditCustomerFormService] = useState('Classic Cut');
+  const [editCustomerFormLastVisit, setEditCustomerFormLastVisit] = useState('');
+  const [editCustomerFormNotes, setEditCustomerFormNotes] = useState('');
+  const [isUpdatingCustomer, setIsUpdatingCustomer] = useState(false);
+  const [editCustomerError, setEditCustomerError] = useState<string | null>(null);
   const [date, setDate] = useState(currentDate);
   const [time, setTime] = useState('10:30');
   const [service, setService] = useState('Classic Cut');
@@ -343,6 +354,15 @@ function App() {
   }, [showSuccess]);
 
   useEffect(() => {
+    if (!customerSuccessMessage) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setCustomerSuccessMessage(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [customerSuccessMessage]);
+
+  useEffect(() => {
     const updateNow = () => {
       const now = new Date();
       setCurrentMinutes(now.getHours() * 60 + now.getMinutes());
@@ -403,9 +423,13 @@ function App() {
 
   const handleCreateNewCustomer = () => {
     setIsCreatingCustomer(true);
+    setIsEditingCustomer(false);
+    setEditingCustomerId(null);
     setSelectedCustomer(null);
     setSearchTerm('');
     setCustomerError(null);
+    setEditCustomerError(null);
+    setCustomerSuccessMessage(null);
   };
 
   const handleCreateCustomer = async (event: FormEvent) => {
@@ -418,10 +442,12 @@ function App() {
 
     setIsSavingCustomer(true);
     setCustomerError(null);
+    setCustomerSuccessMessage(null);
 
     const customerPayload: any = {
       full_name: customerFormName.trim(),
       preferred_service: customerFormService || null,
+      last_visit: customerFormLastVisit.trim() || null,
       notes: customerFormNotes.trim() || null,
     };
 
@@ -451,6 +477,71 @@ function App() {
     setCustomerFormLastVisit('');
     setCustomerFormNotes('');
     setIsSavingCustomer(false);
+    setCustomerSuccessMessage('Customer created successfully.');
+  };
+
+  const handleEditCustomer = (customer: Customer) => {
+    setIsCreatingCustomer(false);
+    setSelectedCustomer(null);
+    setSearchTerm(customer.name);
+    setIsEditingCustomer(true);
+    setEditingCustomerId(customer.id);
+    setEditCustomerFormName(customer.name);
+    setEditCustomerFormPhone(customer.phone === 'No phone provided' ? '' : customer.phone);
+    setEditCustomerFormService(customer.favoriteService || 'Classic Cut');
+    setEditCustomerFormLastVisit(customer.lastVisit === 'Not booked yet' ? '' : customer.lastVisit);
+    setEditCustomerFormNotes(customer.note === 'No notes yet' ? '' : customer.note);
+    setEditCustomerError(null);
+    setCustomerSuccessMessage(null);
+  };
+
+  const handleCancelEditCustomer = () => {
+    setIsEditingCustomer(false);
+    setEditingCustomerId(null);
+    setEditCustomerError(null);
+  };
+
+  const handleUpdateCustomer = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!editingCustomerId) {
+      setEditCustomerError('No customer selected for editing.');
+      return;
+    }
+
+    if (!editCustomerFormName.trim()) {
+      setEditCustomerError('Please add a customer name.');
+      return;
+    }
+
+    setIsUpdatingCustomer(true);
+    setEditCustomerError(null);
+    setCustomerSuccessMessage(null);
+
+    const customerPayload: any = {
+      full_name: editCustomerFormName.trim(),
+      mobile: editCustomerFormPhone.trim() || null,
+      preferred_service: editCustomerFormService || null,
+      last_visit: editCustomerFormLastVisit.trim() || null,
+      notes: editCustomerFormNotes.trim() || null,
+    };
+
+    const { data: updatedCustomer, error } = await updateCustomerInSupabase(editingCustomerId, customerPayload);
+
+    if (!updatedCustomer) {
+      const message = (error as { message?: string } | null)?.message ?? 'Unknown error while saving customer changes.';
+      setEditCustomerError(`Could not save customer changes: ${message}`);
+      setIsUpdatingCustomer(false);
+      return;
+    }
+
+    const mappedCustomer = mapCustomerRecord(updatedCustomer);
+    setCustomers((current) => current.map((customer) => (customer.id === mappedCustomer.id ? mappedCustomer : customer)));
+    setSearchTerm(mappedCustomer.name);
+    setIsEditingCustomer(false);
+    setEditingCustomerId(null);
+    setIsUpdatingCustomer(false);
+    setCustomerSuccessMessage('Customer updated successfully.');
   };
 
   const openProfile = (customer: Customer) => {
@@ -972,7 +1063,13 @@ function App() {
 
                 {!selectedCustomer ? (
                   <div className="mt-3 space-y-2">
-                    {customers.length === 0 && !isCreatingCustomer ? (
+                    {customerSuccessMessage ? (
+                      <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+                        {customerSuccessMessage}
+                      </p>
+                    ) : null}
+
+                    {customers.length === 0 && !isCreatingCustomer && !isEditingCustomer ? (
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4 text-sm text-slate-600">
                         <p className="font-semibold text-slate-900">No customers yet</p>
                         <p className="mt-1">Create your first customer profile to start booking visits.</p>
@@ -988,36 +1085,49 @@ function App() {
 
                     {customers.length > 0 && filteredCustomers.length > 0 ? (
                       filteredCustomers.map((customer) => (
-                        <button
+                        <div
                           key={customer.id}
-                          type="button"
-                          onClick={() => handleSelectCustomer(customer)}
                           className="flex w-full items-start justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-blue-500 hover:shadow-sm"
                         >
-                          <div>
-                            <p
-                              className="font-semibold text-slate-900 cursor-pointer text-left"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openProfile(customer);
-                              }}
-                            >
-                              {customer.name}
-                            </p>
-                            <p className="text-sm text-slate-500">{customer.phone}</p>
-                          </div>
-                          <span className="text-sm text-slate-400">{customer.note}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectCustomer(customer)}
+                            className="flex flex-1 items-start justify-between text-left"
+                          >
+                            <div>
+                              <p
+                                className="font-semibold text-slate-900 cursor-pointer text-left"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openProfile(customer);
+                                }}
+                              >
+                                {customer.name}
+                              </p>
+                              <p className="text-sm text-slate-500">{customer.phone}</p>
+                            </div>
+                            <span className="ml-3 text-sm text-slate-400">{customer.note}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditCustomer(customer)}
+                            className="ml-3 inline-flex shrink-0 items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                            aria-label={`Edit ${customer.name}`}
+                            title={`Edit ${customer.name}`}
+                          >
+                            Edit
+                          </button>
+                        </div>
                       ))
                     ) : null}
 
-                    {customers.length > 0 && filteredCustomers.length === 0 && !isCreatingCustomer ? (
+                    {customers.length > 0 && filteredCustomers.length === 0 && !isCreatingCustomer && !isEditingCustomer ? (
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-500">
                         No matches yet.
                       </div>
                     ) : null}
 
-                    {customers.length > 0 ? (
+                    {customers.length > 0 && !isEditingCustomer ? (
                       <button
                         type="button"
                         onClick={handleCreateNewCustomer}
@@ -1027,6 +1137,92 @@ function App() {
                       </button>
                     ) : null}
                   </div>
+                ) : null}
+
+                {!selectedCustomer && isEditingCustomer ? (
+                  <form onSubmit={handleUpdateCustomer} className="mt-3 space-y-3 rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">Edit customer</p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="block text-sm font-medium text-slate-700">
+                        <span className="mb-2 block">Name</span>
+                        <input
+                          type="text"
+                          value={editCustomerFormName}
+                          onChange={(event) => setEditCustomerFormName(event.target.value)}
+                          placeholder="Full name"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-slate-700">
+                        <span className="mb-2 block">Phone</span>
+                        <input
+                          type="text"
+                          value={editCustomerFormPhone}
+                          onChange={(event) => setEditCustomerFormPhone(event.target.value)}
+                          placeholder="Phone number"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-slate-700">
+                        <span className="mb-2 block">Favourite service</span>
+                        <select
+                          value={editCustomerFormService}
+                          onChange={(event) => setEditCustomerFormService(event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        >
+                          <option>Classic Cut</option>
+                          <option>Beard Shape</option>
+                          <option>Premium Hot Towel</option>
+                          <option>Skin Fade</option>
+                        </select>
+                      </label>
+
+                      <label className="block text-sm font-medium text-slate-700">
+                        <span className="mb-2 block">Last visit</span>
+                        <input
+                          type="text"
+                          value={editCustomerFormLastVisit}
+                          onChange={(event) => setEditCustomerFormLastVisit(event.target.value)}
+                          placeholder="e.g. Last Thursday"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        />
+                      </label>
+                    </div>
+
+                    <label className="block text-sm font-medium text-slate-700">
+                      <span className="mb-2 block">Notes</span>
+                      <textarea
+                        value={editCustomerFormNotes}
+                        onChange={(event) => setEditCustomerFormNotes(event.target.value)}
+                        rows={3}
+                        placeholder="Anything helpful for future visits"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                      />
+                    </label>
+
+                    {editCustomerError ? (
+                      <p className="text-sm font-medium text-rose-600">{editCustomerError}</p>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="submit"
+                        disabled={isUpdatingCustomer}
+                        className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                      >
+                        {isUpdatingCustomer ? 'Saving…' : 'Save Changes'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelEditCustomer}
+                        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
                 ) : null}
 
                 {!selectedCustomer && isCreatingCustomer ? (

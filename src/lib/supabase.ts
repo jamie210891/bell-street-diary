@@ -35,6 +35,16 @@ export type CustomerInsert = {
   mobile?: string | null;
   email?: string | null;
   preferred_service?: string | null;
+  last_visit?: string | null;
+  notes?: string | null;
+};
+
+export type CustomerUpdate = {
+  full_name?: string;
+  mobile?: string | null;
+  email?: string | null;
+  preferred_service?: string | null;
+  last_visit?: string | null;
   notes?: string | null;
 };
 
@@ -83,6 +93,31 @@ export async function createCustomerInSupabase(payload: CustomerInsert): Promise
 
   if (error) {
     console.error('Unable to save customer to Supabase:', error);
+    return { data: null, error };
+  }
+
+  return { data: data as CustomerRecord | null, error: null };
+}
+
+export async function updateCustomerInSupabase(
+  customerId: string,
+  payload: CustomerUpdate,
+): Promise<{ data: CustomerRecord | null; error: unknown | null }> {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    const error = new Error('Cannot update customer: Supabase environment variables are missing.');
+    console.error(error);
+    return { data: null, error };
+  }
+
+  const { data, error } = await supabase
+    .from('customers')
+    .update(payload)
+    .eq('id', customerId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Unable to update customer in Supabase:', error);
     return { data: null, error };
   }
 
