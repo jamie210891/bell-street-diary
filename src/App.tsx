@@ -1,9 +1,12 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { AlertCircle, CalendarDays, CheckCircle2, Clock3, Search, Sparkles, X } from 'lucide-react';
 import {
+  customerHasAppointmentsInSupabase,
   createAppointmentInSupabase,
   createCustomerInSupabase,
+  deleteCustomerInSupabase,
   getCustomersFromSupabase,
+  setCustomerArchivedStateInSupabase,
   updateCustomerInSupabase,
   type CustomerRecord,
 } from './lib/supabase';
@@ -15,6 +18,17 @@ type Customer = {
   favoriteService: string;
   lastVisit: string;
   note: string;
+  isArchived: boolean;
+};
+
+const ARCHIVE_NOTE_PREFIX = '[ARCHIVED] ';
+
+const stripArchivePrefix = (notes: string | null | undefined) => {
+  if (!notes) {
+    return 'No notes yet';
+  }
+
+  return notes.startsWith(ARCHIVE_NOTE_PREFIX) ? notes.slice(ARCHIVE_NOTE_PREFIX.length) || 'No notes yet' : notes;
 };
 
 type Appointment = {
@@ -76,14 +90,20 @@ const initialAppointments: Appointment[] = [
   },
 ];
 
-const mapCustomerRecord = (customer: CustomerRecord): Customer => ({
-  id: customer.id,
-  name: customer.full_name ?? 'Unknown customer',
-  phone: customer.phone ?? customer.mobile ?? 'No phone provided',
-  favoriteService: customer.preferred_service ?? 'Classic Cut',
-  lastVisit: customer.last_visit ?? 'Not booked yet',
-  note: customer.notes ?? 'No notes yet',
-});
+const mapCustomerRecord = (customer: CustomerRecord): Customer => {
+  const notes = customer.notes ?? null;
+  const archivedByNote = Boolean(notes && notes.startsWith(ARCHIVE_NOTE_PREFIX));
+
+  return {
+    id: customer.id,
+    name: customer.full_name ?? 'Unknown customer',
+    phone: customer.phone ?? customer.mobile ?? 'No phone provided',
+    favoriteService: customer.preferred_service ?? 'Classic Cut',
+    lastVisit: customer.last_visit ?? 'Not booked yet',
+    note: stripArchivePrefix(notes),
+    isArchived: Boolean(customer.is_archived) || archivedByNote,
+  };
+};
 
 const timeToMinutes = (time: string) => {
   const [hours, minutes] = time.split(':').map(Number);
@@ -206,7 +226,11 @@ function App() {
   const [editCustomerFormLastVisit, setEditCustomerFormLastVisit] = useState('');
   const [editCustomerFormNotes, setEditCustomerFormNotes] = useState('');
   const [isUpdatingCustomer, setIsUpdatingCustomer] = useState(false);
+  const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
+  const [isLoadingDeleteAction, setIsLoadingDeleteAction] = useState(false);
+  const [deleteActionType, setDeleteActionType] = useState<'delete' | 'archive' | null>(null);
   const [editCustomerError, setEditCustomerError] = useState<string | null>(null);
+  const [showArchivedCustomers, setShowArchivedCustomers] = useState(false);
   const [date, setDate] = useState(currentDate);
   const [time, setTime] = useState('10:30');
   const [service, setService] = useState('Classic Cut');
@@ -230,7 +254,9 @@ function App() {
   const timelineSectionRef = useRef<HTMLDivElement | null>(null);
   const reminderSectionRef = useRef<HTMLDivElement | null>(null);
 
-  const filteredCustomers = customers.filter((customer) =>
+  const activeCustomers = customers.filter((customer) => !customer.isArchived);
+  const archivedCustomers = customers.filter((customer) => customer.isArchived);
+  const filteredCustomers = activeCustomers.filter((customer) =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
@@ -322,6 +348,11 @@ function App() {
     const m = mins % 60;
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
+  };
+
+  const reloadCustomers = async () => {
+    const records = await getCustomersFromSupabase();
+    setCustomers(records.map(mapCustomerRecord));
   };
 
   useEffect(() => {
@@ -491,6 +522,7 @@ function App() {
     setEditCustomerFormService(customer.favoriteService || 'Classic Cut');
     setEditCustomerFormLastVisit(customer.lastVisit === 'Not booked yet' ? '' : customer.lastVisit);
     setEditCustomerFormNotes(customer.note === 'No notes yet' ? '' : customer.note);
+    setDeleteActionType(null);
     setEditCustomerError(null);
     setCustomerSuccessMessage(null);
   };
@@ -498,6 +530,7 @@ function App() {
   const handleCancelEditCustomer = () => {
     setIsEditingCustomer(false);
     setEditingCustomerId(null);
+    setDeleteActionType(null);
     setEditCustomerError(null);
   };
 
@@ -517,6 +550,7 @@ function App() {
     setIsUpdatingCustomer(true);
     setEditCustomerError(null);
     setCustomerSuccessMessage(null);
+    setDeleteActionType(null);
 
     const customerIdToUpdate = editingCustomerId;
     const trimmedName = editCustomerFormName.trim();
@@ -559,11 +593,94 @@ function App() {
     setIsEditingCustomer(false);
     setEditingCustomerId(null);
     setSelectedCustomer(null);
-    setCustomerSuccessMessage('Customer updated');
+    setCustomerSuccessMessage('Customer updated successfully');
 
-    const records = await getCustomersFromSupabase();
-    setCustomers(records.map(mapCustomerRecord));
+    await reloadCustomers();
     setIsUpdatingCustomer(false);
+  };
+
+  const handleRequestDeleteCustomer = async () => {
+    if (!editingCustomerId) {
+      setEditCustomerError('No customer selected for editing.');
+      return;
+    }
+
+    setIsLoadingDeleteAction(true);
+    setEditCustomerError(null);
+    setDeleteActionType(null);
+
+    const hasLocalAppointments = appointments.some((appointment) => appointment.customerId === editingCustomerId);
+    if (hasLocalAppointments) {
+      setDeleteActionType('archive');
+      setIsLoadingDeleteAction(false);
+      return;
+    }
+
+    const { hasAppointments, error } = await customerHasAppointmentsInSupabase(editingCustomerId);
+
+    if (error) {
+      const message = (error as { message?: string } | null)?.message ?? 'Unknown error while checking customer history.';
+      setEditCustomerError(`Could not check appointment history: ${message}`);
+      setIsLoadingDeleteAction(false);
+      return;
+    }
+
+    setDeleteActionType(hasAppointments ? 'archive' : 'delete');
+    setIsLoadingDeleteAction(false);
+  };
+
+  const handleDeleteActionCancel = () => {
+    setDeleteActionType(null);
+  };
+
+  const handleConfirmDeleteCustomer = async () => {
+    if (!editingCustomerId || !deleteActionType) {
+      return;
+    }
+
+    setIsDeletingCustomer(true);
+    setEditCustomerError(null);
+
+    const customerId = editingCustomerId;
+
+    const result = deleteActionType === 'delete'
+      ? await deleteCustomerInSupabase(customerId)
+      : await setCustomerArchivedStateInSupabase(customerId, true);
+
+    if (result.error) {
+      const message = (result.error as { message?: string } | null)?.message ?? 'Unknown error while deleting customer.';
+      setEditCustomerError(`Could not delete customer: ${message}`);
+      setIsDeletingCustomer(false);
+      return;
+    }
+
+    setCustomers((current) =>
+      deleteActionType === 'delete'
+        ? current.filter((customer) => customer.id !== customerId)
+        : current.map((customer) => (customer.id === customerId ? { ...customer, isArchived: true } : customer)),
+    );
+    setIsEditingCustomer(false);
+    setEditingCustomerId(null);
+    setDeleteActionType(null);
+    setSelectedCustomer(null);
+
+    await reloadCustomers();
+    setCustomerSuccessMessage('Customer deleted');
+    setIsDeletingCustomer(false);
+  };
+
+  const handleRestoreArchivedCustomer = async (customerId: string) => {
+    setEditCustomerError(null);
+    const { error } = await setCustomerArchivedStateInSupabase(customerId, false);
+
+    if (error) {
+      const message = (error as { message?: string } | null)?.message ?? 'Unknown error while restoring customer.';
+      setEditCustomerError(`Could not restore customer: ${message}`);
+      return;
+    }
+
+    await reloadCustomers();
+    setCustomerSuccessMessage('Customer restored');
   };
 
   const openProfile = (customer: Customer) => {
@@ -1091,7 +1208,7 @@ function App() {
                       </p>
                     ) : null}
 
-                    {customers.length === 0 && !isCreatingCustomer && !isEditingCustomer ? (
+                    {activeCustomers.length === 0 && !isCreatingCustomer && !isEditingCustomer ? (
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4 text-sm text-slate-600">
                         <p className="font-semibold text-slate-900">No customers yet</p>
                         <p className="mt-1">Create your first customer profile to start booking visits.</p>
@@ -1105,7 +1222,7 @@ function App() {
                       </div>
                     ) : null}
 
-                    {customers.length > 0 && filteredCustomers.length > 0 ? (
+                    {activeCustomers.length > 0 && filteredCustomers.length > 0 ? (
                       filteredCustomers.map((customer) => (
                         <div
                           key={customer.id}
@@ -1143,13 +1260,13 @@ function App() {
                       ))
                     ) : null}
 
-                    {customers.length > 0 && filteredCustomers.length === 0 && !isCreatingCustomer && !isEditingCustomer ? (
+                    {activeCustomers.length > 0 && filteredCustomers.length === 0 && !isCreatingCustomer && !isEditingCustomer ? (
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-500">
                         No matches yet.
                       </div>
                     ) : null}
 
-                    {customers.length > 0 && !isEditingCustomer ? (
+                    {activeCustomers.length > 0 && !isEditingCustomer ? (
                       <button
                         type="button"
                         onClick={handleCreateNewCustomer}
@@ -1157,6 +1274,38 @@ function App() {
                       >
                         + Create New Customer
                       </button>
+                    ) : null}
+
+                    {archivedCustomers.length > 0 ? (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowArchivedCustomers((current) => !current)}
+                          className="w-full text-left text-sm font-semibold text-amber-800"
+                        >
+                          {showArchivedCustomers ? 'Hide Archived Customers' : `Archived Customers (${archivedCustomers.length})`}
+                        </button>
+
+                        {showArchivedCustomers ? (
+                          <div className="mt-3 space-y-2">
+                            {archivedCustomers.map((customer) => (
+                              <div key={customer.id} className="flex items-center justify-between rounded-xl border border-amber-200 bg-white px-3 py-2">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">{customer.name}</p>
+                                  <p className="text-xs text-slate-500">{customer.phone}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRestoreArchivedCustomer(customer.id)}
+                                  className="rounded-full border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                                >
+                                  Restore
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
@@ -1244,6 +1393,47 @@ function App() {
                         Cancel
                       </button>
                     </div>
+
+                    {deleteActionType ? (
+                      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                        {deleteActionType === 'delete' ? (
+                          <p className="text-sm font-medium text-rose-800">
+                            Are you sure you want to permanently delete this customer?
+                          </p>
+                        ) : (
+                          <p className="text-sm font-medium text-rose-800">
+                            This customer has appointment history. Deleting them would remove historical records.
+                          </p>
+                        )}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={handleDeleteActionCancel}
+                            disabled={isDeletingCustomer}
+                            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleConfirmDeleteCustomer}
+                            disabled={isDeletingCustomer}
+                            className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isDeletingCustomer ? 'Working...' : deleteActionType === 'delete' ? 'Delete' : 'Archive Customer'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={handleRequestDeleteCustomer}
+                      disabled={isUpdatingCustomer || isLoadingDeleteAction || isDeletingCustomer}
+                      className="w-full rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isLoadingDeleteAction ? 'Checking history...' : 'Delete Customer'}
+                    </button>
                   </form>
                 ) : null}
 
