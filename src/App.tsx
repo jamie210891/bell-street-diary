@@ -528,10 +528,20 @@ function App() {
 
     const { data: updatedCustomer, error } = await updateCustomerInSupabase(editingCustomerId, customerPayload);
 
-    if (!updatedCustomer) {
+    if (error) {
       const message = (error as { message?: string } | null)?.message ?? 'Unknown error while saving customer changes.';
       setEditCustomerError(`Could not save customer changes: ${message}`);
       setIsUpdatingCustomer(false);
+      return;
+    }
+
+    if (!updatedCustomer) {
+      const records = await getCustomersFromSupabase();
+      setCustomers(records.map(mapCustomerRecord));
+      setIsEditingCustomer(false);
+      setEditingCustomerId(null);
+      setIsUpdatingCustomer(false);
+      setCustomerSuccessMessage('Customer list refreshed.');
       return;
     }
 

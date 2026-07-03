@@ -114,7 +114,7 @@ export async function updateCustomerInSupabase(
     .update(payload)
     .eq('id', customerId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error('Unable to update customer in Supabase:', error);
