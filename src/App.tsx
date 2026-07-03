@@ -584,7 +584,7 @@ function App() {
         <main className="space-y-6">
           {/* Debug: Supabase key status */}
           <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600">
-            <span>🔑 Supabase key loaded: {import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ? 'yes' : 'no'}</span>
+            <span>🔑 Supabase key loaded: {import.meta.env.VITE_SUPABASE_ANON_KEY ? 'yes' : 'no'}</span>
           </div>
 
           <section className="rounded-[32px] border border-slate-200/70 bg-gradient-to-br from-slate-900 via-slate-800 to-blue-700 p-8 text-white shadow-[0_24px_80px_rgba(15,23,42,0.18)] sm:p-10">

@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Debug: Log exact configuration
-const keyLoaded = !!(supabaseUrl && supabasePublishableKey);
-const keyPreview = supabasePublishableKey ? supabasePublishableKey.substring(0, 20) : 'UNDEFINED';
+const keyLoaded = !!(supabaseUrl && supabaseAnonKey);
+const keyPreview = supabaseAnonKey ? supabaseAnonKey.substring(0, 20) : 'UNDEFINED';
 console.log('🔑 Supabase Configuration:');
 console.log('   URL:', supabaseUrl);
 console.log('   Key (first 20 chars):', keyPreview);
@@ -13,7 +13,7 @@ console.log('   Key loaded:', keyLoaded ? 'yes' : 'no');
 if (!keyLoaded) {
   console.error('⚠️ Supabase configuration incomplete:', {
     hasUrl: !!supabaseUrl,
-    hasKey: !!supabasePublishableKey,
+    hasKey: !!supabaseAnonKey,
     url: supabaseUrl,
     keyFirst20: keyPreview,
   });
@@ -49,15 +49,15 @@ export type AppointmentPayload = {
   sms_reminder?: boolean;
 };
 
-if (!supabaseUrl || !supabasePublishableKey) {
-  console.error('Supabase environment variables are not set. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to connect to Supabase.');
-  throw new Error('Cannot initialize Supabase: VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY is missing');
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase environment variables are not set. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to connect to Supabase.');
+  throw new Error('Cannot initialize Supabase: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing');
 }
 
-export const supabase = createClient(supabaseUrl, supabasePublishableKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export async function getCustomersFromSupabase(): Promise<CustomerRecord[]> {
-  if (!supabaseUrl || !supabasePublishableKey) {
+  if (!supabaseUrl || !supabaseAnonKey) {
     console.error('Cannot load customers: Supabase environment variables are missing.');
     return [];
   }
@@ -73,7 +73,7 @@ export async function getCustomersFromSupabase(): Promise<CustomerRecord[]> {
 }
 
 export async function createCustomerInSupabase(payload: CustomerInsert): Promise<{ data: CustomerRecord | null; error: unknown | null }> {
-  if (!supabaseUrl || !supabasePublishableKey) {
+  if (!supabaseUrl || !supabaseAnonKey) {
     const error = new Error('Cannot save customer: Supabase environment variables are missing.');
     console.error(error);
     return { data: null, error };
@@ -90,7 +90,7 @@ export async function createCustomerInSupabase(payload: CustomerInsert): Promise
 }
 
 export async function createAppointmentInSupabase(payload: AppointmentPayload) {
-  if (!supabaseUrl || !supabasePublishableKey) {
+  if (!supabaseUrl || !supabaseAnonKey) {
     return null;
   }
 
