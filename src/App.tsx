@@ -4,10 +4,14 @@ import {
   customerHasAppointmentsInSupabase,
   createAppointmentInSupabase,
   createCustomerInSupabase,
+  deleteAppointmentInSupabase,
   deleteCustomerInSupabase,
+  getAppointmentsFromSupabase,
   getCustomersFromSupabase,
   setCustomerArchivedStateInSupabase,
+  updateAppointmentInSupabase,
   updateCustomerInSupabase,
+  type AppointmentRecord,
   type CustomerRecord,
 } from './lib/supabase';
 
@@ -64,30 +68,7 @@ const actionItems = [
 ];
 
 const initialAppointments: Appointment[] = [
-  {
-    id: 'appt-1',
-    date: '2026-07-03',
-    time: '09:30',
-    duration: '45 mins',
-    name: 'Jordan Lee',
-    service: 'Classic Cut',
-    accent: 'bg-white',
-    whatsappReminder: true,
-    smsReminder: false,
-    reminderSent: false,
-  },
-  {
-    id: 'appt-2',
-    date: '2026-07-03',
-    time: '11:00',
-    duration: '30 mins',
-    name: 'Mina Patel',
-    service: 'Beard Shape',
-    accent: 'bg-white',
-    whatsappReminder: false,
-    smsReminder: false,
-    reminderSent: true,
-  },
+  // Appointments are loaded from Supabase on startup.
 ];
 
 const mapCustomerRecord = (customer: CustomerRecord): Customer => {
@@ -102,6 +83,28 @@ const mapCustomerRecord = (customer: CustomerRecord): Customer => {
     lastVisit: customer.last_visit ?? 'Not booked yet',
     note: stripArchivePrefix(notes),
     isArchived: Boolean(customer.is_archived) || archivedByNote,
+  };
+};
+
+const mapAppointmentRecord = (
+  appointment: AppointmentRecord,
+  customerLookup: Map<string, Customer>,
+): Appointment => {
+  const customerId = appointment.customer_id ?? undefined;
+  const linkedCustomer = customerId ? customerLookup.get(customerId) : undefined;
+
+  return {
+    id: String(appointment.id),
+    date: appointment.appointment_date,
+    time: appointment.appointment_time,
+    duration: appointment.duration,
+    name: linkedCustomer?.name ?? 'Unknown customer',
+    service: appointment.service,
+    accent: 'bg-sky-50',
+    customerId,
+    whatsappReminder: Boolean(appointment.whatsapp_reminder),
+    smsReminder: Boolean(appointment.sms_reminder),
+    reminderSent: Boolean(appointment.reminder_sent),
   };
 };
 
@@ -284,6 +287,7 @@ function App() {
   const [whatsapp, setWhatsapp] = useState(true);
   const [sms, setSms] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [appointmentSyncError, setAppointmentSyncError] = useState<string | null>(null);
   const [currentMinutes, setCurrentMinutes] = useState(() => {
     const now = new Date();
     return now.getHours() * 60 + now.getMinutes();
@@ -408,20 +412,47 @@ function App() {
     setCustomers(records.map(mapCustomerRecord));
   };
 
+  const reloadAppointments = async (customerList: Customer[] = customers) => {
+    const { data, error } = await getAppointmentsFromSupabase();
+
+    if (error) {
+      setAppointmentSyncError(formatSupabaseUiError('Could not load appointments', error));
+      return;
+    }
+
+    const customerLookup = new Map(customerList.map((customer) => [customer.id, customer]));
+    setAppointments(sortAppointments(data.map((record) => mapAppointmentRecord(record, customerLookup))));
+    setAppointmentSyncError(null);
+  };
+
   useEffect(() => {
     let isActive = true;
 
-    const loadCustomers = async () => {
-      const records = await getCustomersFromSupabase();
+    const loadData = async () => {
+      const [customerRecords, appointmentResult] = await Promise.all([
+        getCustomersFromSupabase(),
+        getAppointmentsFromSupabase(),
+      ]);
 
       if (!isActive) {
         return;
       }
 
-      setCustomers(records.map(mapCustomerRecord));
+      const mappedCustomers = customerRecords.map(mapCustomerRecord);
+      setCustomers(mappedCustomers);
+
+      if (appointmentResult.error) {
+        setAppointments([]);
+        setAppointmentSyncError(formatSupabaseUiError('Could not load appointments', appointmentResult.error));
+        return;
+      }
+
+      const customerLookup = new Map(mappedCustomers.map((customer) => [customer.id, customer]));
+      setAppointments(sortAppointments(appointmentResult.data.map((record) => mapAppointmentRecord(record, customerLookup))));
+      setAppointmentSyncError(null);
     };
 
-    void loadCustomers();
+    void loadData();
 
     return () => {
       isActive = false;
@@ -805,27 +836,14 @@ function App() {
       sms_reminder: sms,
     };
 
-    try {
-      await createAppointmentInSupabase(appointmentPayload);
-    } catch (error) {
-      console.warn('Unable to persist appointment to Supabase. Continuing with local placeholder state.', error);
+    const { data: savedAppointment, error } = await createAppointmentInSupabase(appointmentPayload);
+
+    if (!savedAppointment || error) {
+      setAppointmentSyncError(formatSupabaseUiError('Could not save appointment', error));
+      return;
     }
 
-    const newAppointment: Appointment = {
-      id: `appt-${Date.now()}`,
-      date,
-      time,
-      duration,
-      name: selectedCustomer.name,
-      service,
-      accent: 'bg-sky-50',
-      customerId: selectedCustomer.id,
-      whatsappReminder: whatsapp,
-      smsReminder: sms,
-      reminderSent: false,
-    };
-
-    setAppointments((current) => sortAppointments([...current, newAppointment]));
+    await reloadAppointments();
     setIsBookingOpen(false);
     setShowSuccess(true);
   };
@@ -842,7 +860,7 @@ function App() {
     setIsEditingAppointment(true);
   };
 
-  const handleSaveAppointmentEdits = () => {
+  const handleSaveAppointmentEdits = async () => {
     if (!activeAppointment) {
       return;
     }
@@ -858,42 +876,69 @@ function App() {
       return;
     }
 
-    const updatedAppointment: Appointment = {
-      ...activeAppointment,
-      customerId: selected.id,
-      name: selected.name,
+    const updatePayload = {
+      customer_id: selected.id,
+      appointment_date: appointmentEditDate,
+      appointment_time: appointmentEditTime,
       service: appointmentEditService,
-      date: appointmentEditDate,
-      time: appointmentEditTime,
       duration: appointmentEditDuration,
     };
 
-    setAppointments((current) =>
-      sortAppointments(current.map((appointment) => (appointment.id === activeAppointment.id ? updatedAppointment : appointment))),
-    );
+    const result = await updateAppointmentInSupabase(activeAppointment.id, updatePayload);
+
+    if (result.error) {
+      setAppointmentEditError(formatSupabaseUiError('Could not save appointment changes', result.error));
+      return;
+    }
+
+    if (result.affectedRows === 0) {
+      setAppointmentEditError('No matching appointment found to update.');
+      return;
+    }
+
+    await reloadAppointments();
     setIsEditingAppointment(false);
     setAppointmentActionConfirm(null);
     setActiveAppointment(null);
   };
 
-  const handleAppointmentAction = () => {
+  const handleAppointmentAction = async () => {
     if (!activeAppointment) {
       return;
     }
 
-    const appointmentId = activeAppointment.id;
-    setAppointments((current) => current.filter((appointment) => appointment.id !== appointmentId));
+    const result = await deleteAppointmentInSupabase(activeAppointment.id);
+
+    if (result.error) {
+      setAppointmentEditError(formatSupabaseUiError('Could not remove appointment', result.error));
+      return;
+    }
+
+    if (result.affectedRows === 0) {
+      setAppointmentEditError('No matching appointment found to delete.');
+      return;
+    }
+
+    await reloadAppointments();
     setIsEditingAppointment(false);
     setAppointmentActionConfirm(null);
     setActiveAppointment(null);
   };
 
-  const handleMarkReminderSent = (appointmentId: string) => {
-    setAppointments((current) =>
-      current.map((appointment) =>
-        appointment.id === appointmentId ? { ...appointment, reminderSent: true } : appointment,
-      ),
-    );
+  const handleMarkReminderSent = async (appointmentId: string) => {
+    const result = await updateAppointmentInSupabase(appointmentId, { reminder_sent: true });
+
+    if (result.error) {
+      setAppointmentSyncError(formatSupabaseUiError('Could not mark reminder as sent', result.error));
+      return;
+    }
+
+    if (result.affectedRows === 0) {
+      setAppointmentSyncError('No matching appointment found to update reminder status.');
+      return;
+    }
+
+    await reloadAppointments();
   };
 
   const openWhatsAppReminder = (phone: string, customerName: string, appointmentDate: string, appointmentTime: string, appointmentService: string) => {
@@ -942,6 +987,12 @@ function App() {
           <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600">
             <span>🔑 Supabase key loaded: {import.meta.env.VITE_SUPABASE_ANON_KEY ? 'yes' : 'no'}</span>
           </div>
+
+          {appointmentSyncError ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+              {appointmentSyncError}
+            </div>
+          ) : null}
 
           <section className="rounded-[32px] border border-slate-200/70 bg-gradient-to-br from-slate-900 via-slate-800 to-blue-700 p-8 text-white shadow-[0_24px_80px_rgba(15,23,42,0.18)] sm:p-10">
             <div className="mb-4 inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-sm font-medium backdrop-blur">

@@ -86,6 +86,28 @@ export type AppointmentPayload = {
   notes?: string;
   whatsapp_reminder?: boolean;
   sms_reminder?: boolean;
+  reminder_sent?: boolean;
+};
+
+export type AppointmentUpdate = Partial<AppointmentPayload>;
+
+export type AppointmentRecord = {
+  id: string | number;
+  customer_id?: string | null;
+  appointment_date: string;
+  appointment_time: string;
+  service: string;
+  duration: string;
+  notes?: string | null;
+  whatsapp_reminder?: boolean | null;
+  sms_reminder?: boolean | null;
+  reminder_sent?: boolean | null;
+};
+
+type AppointmentMutationResult = {
+  data: AppointmentRecord | null;
+  error: unknown | null;
+  affectedRows: number;
 };
 
 if (!supabaseUrl || !supabaseAnonKey) {
@@ -182,17 +204,107 @@ export async function updateCustomerInSupabase(
 
 export async function createAppointmentInSupabase(payload: AppointmentPayload) {
   if (!supabaseUrl || !supabaseAnonKey) {
-    return null;
+    const error = new Error('Cannot save appointment: Supabase environment variables are missing.');
+    return { data: null, error };
   }
 
   const { data, error } = await supabase.from('appointments').insert(payload).select().single();
 
   if (error) {
-    console.warn('Unable to save appointment to Supabase:', error.message);
-    return null;
+    console.error('Unable to save appointment to Supabase:', formatSupabaseError(error));
+    return { data: null, error };
   }
 
-  return data;
+  return { data: data as AppointmentRecord | null, error: null };
+}
+
+export async function getAppointmentsFromSupabase(): Promise<{ data: AppointmentRecord[]; error: unknown | null }> {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    const error = new Error('Cannot load appointments: Supabase environment variables are missing.');
+    console.error(error);
+    return { data: [], error };
+  }
+
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*')
+    .order('appointment_date', { ascending: true })
+    .order('appointment_time', { ascending: true });
+
+  if (error) {
+    console.error('Unable to load appointments from Supabase:', formatSupabaseError(error));
+    return { data: [], error };
+  }
+
+  const rows = (data ?? []) as AppointmentRecord[];
+
+  if (rows.length > 0) {
+    console.log('Appointment table check:', {
+      table: 'appointments',
+      sampleKeys: Object.keys(rows[0] ?? {}),
+      expectedColumns: [
+        'id',
+        'customer_id',
+        'appointment_date',
+        'appointment_time',
+        'service',
+        'duration',
+        'notes',
+        'whatsapp_reminder',
+        'sms_reminder',
+        'reminder_sent',
+      ],
+    });
+  }
+
+  return { data: rows, error: null };
+}
+
+export async function updateAppointmentInSupabase(
+  appointmentId: string,
+  payload: AppointmentUpdate,
+): Promise<AppointmentMutationResult> {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    const error = new Error('Cannot update appointment: Supabase environment variables are missing.');
+    console.error(error);
+    return { data: null, error, affectedRows: 0 };
+  }
+
+  const { data, error, count } = await supabase
+    .from('appointments')
+    .update(payload, { count: 'exact' })
+    .eq('id', appointmentId)
+    .select();
+
+  if (error) {
+    console.error('Unable to update appointment in Supabase:', formatSupabaseError(error));
+    return { data: null, error, affectedRows: 0 };
+  }
+
+  const rows = (data ?? []) as AppointmentRecord[];
+  const affectedRows = count ?? rows.length;
+  return { data: rows[0] ?? null, error: null, affectedRows };
+}
+
+export async function deleteAppointmentInSupabase(appointmentId: string): Promise<{ error: unknown | null; affectedRows: number }> {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    const error = new Error('Cannot delete appointment: Supabase environment variables are missing.');
+    console.error(error);
+    return { error, affectedRows: 0 };
+  }
+
+  const { data, error, count } = await supabase
+    .from('appointments')
+    .delete({ count: 'exact' })
+    .eq('id', appointmentId)
+    .select('id');
+
+  if (error) {
+    console.error('Unable to delete appointment in Supabase:', formatSupabaseError(error));
+    return { error, affectedRows: 0 };
+  }
+
+  return { error: null, affectedRows: count ?? (data ?? []).length };
 }
 
 export async function customerHasAppointmentsInSupabase(customerId: string): Promise<{ hasAppointments: boolean; error: unknown | null }> {
