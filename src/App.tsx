@@ -518,15 +518,21 @@ function App() {
     setEditCustomerError(null);
     setCustomerSuccessMessage(null);
 
+    const customerIdToUpdate = editingCustomerId;
+    const trimmedName = editCustomerFormName.trim();
+    const trimmedPhone = editCustomerFormPhone.trim();
+    const trimmedLastVisit = editCustomerFormLastVisit.trim();
+    const trimmedNotes = editCustomerFormNotes.trim();
+
     const customerPayload: any = {
-      full_name: editCustomerFormName.trim(),
-      mobile: editCustomerFormPhone.trim() || null,
+      full_name: trimmedName,
+      mobile: trimmedPhone || null,
       preferred_service: editCustomerFormService || null,
-      last_visit: editCustomerFormLastVisit.trim() || null,
-      notes: editCustomerFormNotes.trim() || null,
+      last_visit: trimmedLastVisit || null,
+      notes: trimmedNotes || null,
     };
 
-    const { data: updatedCustomer, error } = await updateCustomerInSupabase(editingCustomerId, customerPayload);
+    const { error } = await updateCustomerInSupabase(customerIdToUpdate, customerPayload);
 
     if (error) {
       const message = (error as { message?: string } | null)?.message ?? 'Unknown error while saving customer changes.';
@@ -535,23 +541,29 @@ function App() {
       return;
     }
 
-    if (!updatedCustomer) {
-      const records = await getCustomersFromSupabase();
-      setCustomers(records.map(mapCustomerRecord));
-      setIsEditingCustomer(false);
-      setEditingCustomerId(null);
-      setIsUpdatingCustomer(false);
-      setCustomerSuccessMessage('Customer list refreshed.');
-      return;
-    }
-
-    const mappedCustomer = mapCustomerRecord(updatedCustomer);
-    setCustomers((current) => current.map((customer) => (customer.id === mappedCustomer.id ? mappedCustomer : customer)));
-    setSearchTerm(mappedCustomer.name);
+    setCustomers((current) =>
+      current.map((customer) =>
+        customer.id === customerIdToUpdate
+          ? {
+              ...customer,
+              name: trimmedName,
+              phone: trimmedPhone || 'No phone provided',
+              favoriteService: editCustomerFormService || 'Classic Cut',
+              lastVisit: trimmedLastVisit || 'Not booked yet',
+              note: trimmedNotes || 'No notes yet',
+            }
+          : customer,
+      ),
+    );
+    setSearchTerm(trimmedName);
     setIsEditingCustomer(false);
     setEditingCustomerId(null);
+    setSelectedCustomer(null);
+    setCustomerSuccessMessage('Customer updated');
+
+    const records = await getCustomersFromSupabase();
+    setCustomers(records.map(mapCustomerRecord));
     setIsUpdatingCustomer(false);
-    setCustomerSuccessMessage('Customer updated successfully.');
   };
 
   const openProfile = (customer: Customer) => {
@@ -1222,7 +1234,7 @@ function App() {
                         disabled={isUpdatingCustomer}
                         className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
                       >
-                        {isUpdatingCustomer ? 'Saving…' : 'Save Changes'}
+                        {isUpdatingCustomer ? 'Saving...' : 'Save Changes'}
                       </button>
                       <button
                         type="button"
