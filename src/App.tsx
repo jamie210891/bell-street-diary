@@ -197,6 +197,25 @@ const getReminderMessage = (time: string) => {
   return `Hello! Just a friendly reminder that you have an appointment at The Bell Street Barbers tomorrow at ${time}.\n\nI look forward to seeing you.\n\nKind regards,\nJamie`;
 };
 
+const formatSupabaseUiError = (prefix: string, error: unknown) => {
+  const supabaseError = error as {
+    message?: string;
+    details?: string;
+    hint?: string;
+    code?: string;
+  } | null;
+
+  const message = supabaseError?.message ?? 'Unknown error';
+  const details = supabaseError?.details ? ` Details: ${supabaseError.details}` : '';
+  const hint = supabaseError?.hint ? ` Hint: ${supabaseError.hint}` : '';
+  const code = supabaseError?.code ? ` (code: ${supabaseError.code})` : '';
+  const fullMessage = `${message}${code}${details}${hint}`;
+  const isPolicyError = /row-level security|\brls\b|policy|permission denied|42501/i.test(fullMessage);
+  const policyNote = isPolicyError ? ' Note: This looks like a Supabase RLS/policy issue. Check your policies for this table and role.' : '';
+
+  return `${prefix}: ${fullMessage}${policyNote}`;
+};
+
 function App() {
   const today = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
@@ -569,8 +588,7 @@ function App() {
     const { error, affectedRows } = await updateCustomerInSupabase(customerIdToUpdate, customerPayload);
 
     if (error) {
-      const message = (error as { message?: string } | null)?.message ?? 'Unknown error while saving customer changes.';
-      setEditCustomerError(`Could not save customer changes: ${message}`);
+      setEditCustomerError(formatSupabaseUiError('Could not save customer changes', error));
       setIsUpdatingCustomer(false);
       return;
     }
@@ -625,8 +643,7 @@ function App() {
     const { hasAppointments, error } = await customerHasAppointmentsInSupabase(editingCustomerId);
 
     if (error) {
-      const message = (error as { message?: string } | null)?.message ?? 'Unknown error while checking customer history.';
-      setEditCustomerError(`Could not check appointment history: ${message}`);
+      setEditCustomerError(formatSupabaseUiError('Could not check appointment history', error));
       setIsLoadingDeleteAction(false);
       return;
     }
@@ -654,8 +671,7 @@ function App() {
       : await setCustomerArchivedStateInSupabase(customerId, true);
 
     if (result.error) {
-      const message = (result.error as { message?: string } | null)?.message ?? 'Unknown error while deleting customer.';
-      setEditCustomerError(`Could not delete customer: ${message}`);
+      setEditCustomerError(formatSupabaseUiError('Could not delete customer', result.error));
       setIsDeletingCustomer(false);
       return;
     }
@@ -686,8 +702,7 @@ function App() {
     const { error, affectedRows } = await setCustomerArchivedStateInSupabase(customerId, false);
 
     if (error) {
-      const message = (error as { message?: string } | null)?.message ?? 'Unknown error while restoring customer.';
-      setEditCustomerError(`Could not restore customer: ${message}`);
+      setEditCustomerError(formatSupabaseUiError('Could not restore customer', error));
       return;
     }
 

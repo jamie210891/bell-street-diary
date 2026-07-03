@@ -38,6 +38,27 @@ type CustomerMutationResult = {
   affectedRows: number;
 };
 
+type SupabaseErrorLike = {
+  message?: string;
+  details?: string;
+  hint?: string;
+  code?: string;
+};
+
+const formatSupabaseError = (error: unknown): string => {
+  if (!error) {
+    return 'Unknown error';
+  }
+
+  const supabaseError = error as SupabaseErrorLike;
+  const message = supabaseError.message ?? 'Unknown error';
+  const details = supabaseError.details ? ` Details: ${supabaseError.details}` : '';
+  const hint = supabaseError.hint ? ` Hint: ${supabaseError.hint}` : '';
+  const code = supabaseError.code ? ` (code: ${supabaseError.code})` : '';
+
+  return `${message}${code}${details}${hint}`;
+};
+
 export type CustomerInsert = {
   full_name: string;
   mobile?: string | null;
@@ -143,19 +164,20 @@ export async function updateCustomerInSupabase(
     return { data: null, error, affectedRows: 0 };
   }
 
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from('customers')
-    .update(payload)
+    .update(payload, { count: 'exact' })
     .eq('id', customerId)
     .select();
 
   if (error) {
-    console.error('Unable to update customer in Supabase:', error);
+    console.error('Unable to update customer in Supabase:', formatSupabaseError(error));
     return { data: null, error, affectedRows: 0 };
   }
 
   const rows = (data ?? []) as CustomerRecord[];
-  return { data: rows[0] ?? null, error: null, affectedRows: rows.length };
+  const affectedRows = count ?? rows.length;
+  return { data: rows[0] ?? null, error: null, affectedRows };
 }
 
 export async function createAppointmentInSupabase(payload: AppointmentPayload) {
@@ -200,25 +222,19 @@ export async function deleteCustomerInSupabase(customerId: string): Promise<{ er
     return { error, affectedRows: 0 };
   }
 
-  const { data, error } = await supabase.from('customers').delete().eq('id', customerId).select('id');
+  const { data, error, count } = await supabase
+    .from('customers')
+    .delete({ count: 'exact' })
+    .eq('id', customerId)
+    .select('id');
 
   if (error) {
-    console.error('Unable to delete customer in Supabase:', error);
+    console.error('Unable to delete customer in Supabase:', formatSupabaseError(error));
     return { error, affectedRows: 0 };
   }
 
-  return { error: null, affectedRows: (data ?? []).length };
+  return { error: null, affectedRows: count ?? (data ?? []).length };
 }
-
-const ARCHIVE_NOTE_PREFIX = '[ARCHIVED] ';
-
-const stripArchivePrefix = (notes: string | null | undefined) => {
-  if (!notes) {
-    return null;
-  }
-
-  return notes.startsWith(ARCHIVE_NOTE_PREFIX) ? notes.slice(ARCHIVE_NOTE_PREFIX.length) : notes;
-};
 
 export async function setCustomerArchivedStateInSupabase(
   customerId: string,
@@ -232,79 +248,42 @@ export async function setCustomerArchivedStateInSupabase(
 
   const byArchived = await supabase
     .from('customers')
-    .update({ archived: isArchived })
+    .update({ archived: isArchived }, { count: 'exact' })
     .eq('id', customerId)
-    .select();
+    .select('id');
 
   if (!byArchived.error) {
     const rows = (byArchived.data ?? []) as CustomerRecord[];
-    return { data: rows[0] ?? null, error: null, affectedRows: rows.length };
+    return {
+      data: rows[0] ?? null,
+      error: null,
+      affectedRows: byArchived.count ?? rows.length,
+    };
   }
 
   const archivedMessage = (byArchived.error as { message?: string } | null)?.message ?? '';
   const missingArchivedColumn = archivedMessage.includes('archived');
 
   if (!missingArchivedColumn) {
-    console.error('Unable to update archived state in Supabase:', byArchived.error);
+    console.error('Unable to update archived state in Supabase:', formatSupabaseError(byArchived.error));
     return { data: null, error: byArchived.error, affectedRows: 0 };
   }
 
   const byIsArchived = await supabase
     .from('customers')
-    .update({ is_archived: isArchived })
+    .update({ is_archived: isArchived }, { count: 'exact' })
     .eq('id', customerId)
-    .select();
+    .select('id');
 
   if (!byIsArchived.error) {
     const rows = (byIsArchived.data ?? []) as CustomerRecord[];
-    return { data: rows[0] ?? null, error: null, affectedRows: rows.length };
+    return {
+      data: rows[0] ?? null,
+      error: null,
+      affectedRows: byIsArchived.count ?? rows.length,
+    };
   }
 
-  const isArchivedMessage = (byIsArchived.error as { message?: string } | null)?.message ?? '';
-  const missingIsArchivedColumn = isArchivedMessage.includes('is_archived');
-
-  if (!missingIsArchivedColumn) {
-    console.error('Unable to update archive state in Supabase:', byIsArchived.error);
-    return { data: null, error: byIsArchived.error, affectedRows: 0 };
-  }
-
-  const { data: existingCustomer, error: fetchError } = await supabase
-    .from('customers')
-    .select('*')
-    .eq('id', customerId)
-    .maybeSingle();
-
-  if (fetchError) {
-    console.error('Unable to load customer for archive fallback:', fetchError);
-    return { data: null, error: fetchError, affectedRows: 0 };
-  }
-
-  if (!existingCustomer) {
-    return { data: null, error: null, affectedRows: 0 };
-  }
-
-  const cleanNotes = stripArchivePrefix((existingCustomer as CustomerRecord).notes);
-  const fallbackNotes = isArchived ? `${ARCHIVE_NOTE_PREFIX}${cleanNotes ?? ''}`.trimEnd() : cleanNotes;
-
-  const { data: fallbackData, error: fallbackError } = await supabase
-    .from('customers')
-    .update({ notes: fallbackNotes })
-    .eq('id', customerId)
-    .select();
-
-  if (fallbackError) {
-    console.error('Unable to archive customer via notes fallback:', fallbackError);
-    return { data: null, error: fallbackError, affectedRows: 0 };
-  }
-
-  const fallbackRows = (fallbackData ?? []) as CustomerRecord[];
-  const archivedRecord = fallbackRows[0]
-    ? ({ ...fallbackRows[0], is_archived: isArchived, archived: isArchived } as CustomerRecord)
-    : null;
-
-  return {
-    data: archivedRecord,
-    error: null,
-    affectedRows: fallbackRows.length,
-  };
+  console.error('Unable to update archive state in Supabase:', formatSupabaseError(byIsArchived.error));
+  return { data: null, error: byIsArchived.error, affectedRows: 0 };
 }
