@@ -840,12 +840,8 @@ function App() {
   const handleBookAppointment = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (!selectedCustomer) {
-      return;
-    }
-
     const appointmentPayload = {
-      customer_id: selectedCustomer.id,
+      customer_id: selectedCustomer?.id ?? null,
       appointment_date: date,
       appointment_time: time,
       service,
@@ -860,8 +856,11 @@ function App() {
     setInsertResponse(toDebugJson(response));
 
     if (!savedAppointment || error) {
-      setAppointmentSyncError(formatSupabaseUiError('Could not save appointment', error));
-      setLastSupabaseErrorResponse(toDebugJson(response));
+      const fullInsertError = response.error ?? error ?? response;
+      console.error('Supabase appointment insert error (full):', fullInsertError);
+      console.error('Supabase appointment insert payload:', appointmentPayload);
+      setAppointmentSyncError(`Could not save appointment:\n${toDebugJson(fullInsertError)}`);
+      setLastSupabaseErrorResponse(toDebugJson(fullInsertError));
       return;
     }
 
@@ -1035,7 +1034,7 @@ function App() {
           </div>
 
           {appointmentSyncError ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium whitespace-pre-wrap break-words text-rose-700">
               {appointmentSyncError}
             </div>
           ) : null}

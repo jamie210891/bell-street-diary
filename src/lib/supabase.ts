@@ -244,12 +244,14 @@ export async function createAppointmentInSupabase(payload: AppointmentPayload): 
     .single();
 
   if (error) {
-    console.error('Unable to save appointment to Supabase:', formatSupabaseError(error));
+    console.error('Unable to save appointment to Supabase (formatted):', formatSupabaseError(error));
+    console.error('Unable to save appointment to Supabase (raw error):', error);
+    console.error('Appointment insert payload (raw):', payload);
     return {
       data: null,
       error,
       response: {
-        table: APPOINTMENTS_TABLE,
+        table: APPOINTMENTS_TABLE_QUALIFIED,
         queryTarget: APPOINTMENTS_TABLE,
         data,
         error,
