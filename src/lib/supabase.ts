@@ -55,20 +55,21 @@ export async function getCustomersFromSupabase(): Promise<CustomerRecord[]> {
   return (data ?? []) as CustomerRecord[];
 }
 
-export async function createCustomerInSupabase(payload: CustomerInsert) {
+export async function createCustomerInSupabase(payload: CustomerInsert): Promise<{ data: CustomerRecord | null; error: unknown | null }> {
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('Cannot save customer: Supabase environment variables are missing.');
-    return null;
+    const error = new Error('Cannot save customer: Supabase environment variables are missing.');
+    console.error(error);
+    return { data: null, error };
   }
 
   const { data, error } = await supabase.from('customers').insert(payload).select().single();
 
   if (error) {
     console.error('Unable to save customer to Supabase:', error);
-    return null;
+    return { data: null, error };
   }
 
-  return data as CustomerRecord | null;
+  return { data: data as CustomerRecord | null, error: null };
 }
 
 export async function createAppointmentInSupabase(payload: AppointmentPayload) {

@@ -419,18 +419,22 @@ function App() {
     setIsSavingCustomer(true);
     setCustomerError(null);
 
-    const customerPayload = {
+    const customerPayload: any = {
       full_name: customerFormName.trim(),
-      mobile: customerFormPhone.trim() || null,
-      email: null,
       preferred_service: customerFormService || null,
       notes: customerFormNotes.trim() || null,
     };
 
-    const savedCustomer = await createCustomerInSupabase(customerPayload);
+    if (customerFormPhone.trim()) {
+      customerPayload.mobile = customerFormPhone.trim();
+    }
+
+    const { data: savedCustomer, error } = await createCustomerInSupabase(customerPayload);
 
     if (!savedCustomer) {
-      console.error('Customer save failed:', customerPayload);
+      console.error('Customer save failed:', error);
+      alert('Customer save failed: ' + ((error as any)?.message ?? 'Unknown error'));
+      alert(JSON.stringify(error, null, 2));
       setCustomerError('We could not save that customer right now. Please check your network or PWA version and try again.');
       setIsSavingCustomer(false);
       return;
