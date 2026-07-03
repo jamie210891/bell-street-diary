@@ -6,9 +6,19 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export type CustomerRecord = {
   id: string;
   full_name?: string | null;
+  mobile?: string | null;
   phone?: string | null;
+  email?: string | null;
   preferred_service?: string | null;
   last_visit?: string | null;
+  notes?: string | null;
+};
+
+export type CustomerInsert = {
+  full_name: string;
+  mobile?: string | null;
+  email?: string | null;
+  preferred_service?: string | null;
   notes?: string | null;
 };
 
@@ -24,35 +34,37 @@ export type AppointmentPayload = {
 };
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase environment variables are not set. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to connect to Supabase.');
+  console.error('Supabase environment variables are not set. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to connect to Supabase.');
 }
 
 export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '');
 
 export async function getCustomersFromSupabase(): Promise<CustomerRecord[]> {
   if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Cannot load customers: Supabase environment variables are missing.');
     return [];
   }
 
   const { data, error } = await supabase.from('customers').select('*').order('full_name');
 
   if (error) {
-    console.warn('Unable to load customers from Supabase:', error.message);
+    console.error('Unable to load customers from Supabase:', error);
     return [];
   }
 
   return (data ?? []) as CustomerRecord[];
 }
 
-export async function createCustomerInSupabase(payload: Omit<CustomerRecord, 'id'>) {
+export async function createCustomerInSupabase(payload: CustomerInsert) {
   if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Cannot save customer: Supabase environment variables are missing.');
     return null;
   }
 
   const { data, error } = await supabase.from('customers').insert(payload).select().single();
 
   if (error) {
-    console.warn('Unable to save customer to Supabase:', error.message);
+    console.error('Unable to save customer to Supabase:', error);
     return null;
   }
 

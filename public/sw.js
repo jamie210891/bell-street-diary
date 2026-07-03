@@ -1,12 +1,10 @@
-const CACHE_NAME = 'bell-street-diary-v1';
+const CACHE_NAME = 'bell-street-diary-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.svg',
-  '/src/main.tsx',
-  '/src/App.tsx',
-  '/src/index.css'
+  '/index.css',
 ];
 
 self.addEventListener('install', (event) => {
@@ -34,11 +32,27 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request);
-    }),
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (event.request.method !== 'GET') {
+          return networkResponse;
+        }
+
+        const responseClone = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseClone).catch(() => {
+            // Ignore cache update failures.
+          });
+        });
+
+        return networkResponse;
+      })
+      .catch(() => caches.match(event.request).then((cachedResponse) => cachedResponse || Promise.reject('no-match'))),
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });

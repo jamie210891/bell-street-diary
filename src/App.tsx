@@ -419,16 +419,19 @@ function App() {
     setIsSavingCustomer(true);
     setCustomerError(null);
 
-    const savedCustomer = await createCustomerInSupabase({
+    const customerPayload = {
       full_name: customerFormName.trim(),
-      phone: customerFormPhone.trim() || null,
+      mobile: customerFormPhone.trim() || null,
+      email: null,
       preferred_service: customerFormService || null,
-      last_visit: customerFormLastVisit.trim() || null,
       notes: customerFormNotes.trim() || null,
-    });
+    };
+
+    const savedCustomer = await createCustomerInSupabase(customerPayload);
 
     if (!savedCustomer) {
-      setCustomerError('We could not save that customer right now.');
+      console.error('Customer save failed:', customerPayload);
+      setCustomerError('We could not save that customer right now. Please check your network or PWA version and try again.');
       setIsSavingCustomer(false);
       return;
     }
