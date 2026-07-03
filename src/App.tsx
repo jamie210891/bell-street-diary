@@ -852,14 +852,35 @@ function App() {
       reminder_sent: false,
     };
 
+    console.log('Booking appointment payload (App):', appointmentPayload);
+
     const { data: savedAppointment, error, response } = await createAppointmentInSupabase(appointmentPayload);
+    console.log('Booking appointment Supabase response (App):', response);
     setInsertResponse(toDebugJson(response));
 
     if (!savedAppointment || error) {
       const fullInsertError = response.error ?? error ?? response;
+      const insertError = fullInsertError as {
+        message?: string;
+        details?: string;
+        hint?: string;
+        code?: string;
+      } | null;
       console.error('Supabase appointment insert error (full):', fullInsertError);
       console.error('Supabase appointment insert payload:', appointmentPayload);
-      setAppointmentSyncError(`Could not save appointment:\n${toDebugJson(fullInsertError)}`);
+      setAppointmentSyncError(
+        [
+          'Could not save appointment in Supabase.',
+          '',
+          `message: ${insertError?.message ?? 'n/a'}`,
+          `details: ${insertError?.details ?? 'n/a'}`,
+          `hint: ${insertError?.hint ?? 'n/a'}`,
+          `code: ${insertError?.code ?? 'n/a'}`,
+          '',
+          'full response:',
+          toDebugJson(response),
+        ].join('\n'),
+      );
       setLastSupabaseErrorResponse(toDebugJson(fullInsertError));
       return;
     }
@@ -1034,8 +1055,9 @@ function App() {
           </div>
 
           {appointmentSyncError ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium whitespace-pre-wrap break-words text-rose-700">
-              {appointmentSyncError}
+            <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 px-5 py-4 text-rose-800 shadow-sm">
+              <p className="mb-2 text-base font-semibold">Appointment Save Error</p>
+              <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words text-sm leading-6">{appointmentSyncError}</pre>
             </div>
           ) : null}
 

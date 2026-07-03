@@ -83,7 +83,7 @@ export type AppointmentPayload = {
   appointment_time: string;
   service: string;
   duration: string;
-  notes?: string;
+  notes?: string | null;
   whatsapp_reminder?: boolean;
   sms_reminder?: boolean;
   reminder_sent?: boolean;
@@ -237,16 +237,38 @@ export async function createAppointmentInSupabase(payload: AppointmentPayload): 
     };
   }
 
+  const canonicalInsertPayload: AppointmentPayload = {
+    customer_id: payload.customer_id || null,
+    appointment_date: payload.appointment_date,
+    appointment_time: payload.appointment_time,
+    service: payload.service,
+    duration: payload.duration,
+    notes: payload.notes?.trim() ? payload.notes : null,
+    whatsapp_reminder: Boolean(payload.whatsapp_reminder),
+    sms_reminder: Boolean(payload.sms_reminder),
+    reminder_sent: Boolean(payload.reminder_sent),
+  };
+
+  console.log('Supabase appointment insert payload (exact):', canonicalInsertPayload);
+
   const { data, error, count, status, statusText } = await supabase
     .from(APPOINTMENTS_TABLE)
-    .insert(payload)
+    .insert(canonicalInsertPayload)
     .select()
     .single();
+
+  console.log('Supabase appointment insert response (exact):', {
+    data,
+    error,
+    count,
+    status,
+    statusText,
+  });
 
   if (error) {
     console.error('Unable to save appointment to Supabase (formatted):', formatSupabaseError(error));
     console.error('Unable to save appointment to Supabase (raw error):', error);
-    console.error('Appointment insert payload (raw):', payload);
+    console.error('Appointment insert payload (raw):', canonicalInsertPayload);
     return {
       data: null,
       error,
