@@ -270,6 +270,13 @@ function App() {
   const [profileCustomer, setProfileCustomer] = useState<Customer | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileNotesDraft, setProfileNotesDraft] = useState('');
+  const [appointmentEditCustomerId, setAppointmentEditCustomerId] = useState('');
+  const [appointmentEditService, setAppointmentEditService] = useState('Classic Cut');
+  const [appointmentEditDate, setAppointmentEditDate] = useState(currentDate);
+  const [appointmentEditTime, setAppointmentEditTime] = useState('10:30');
+  const [appointmentEditDuration, setAppointmentEditDuration] = useState('45 mins');
+  const [appointmentEditError, setAppointmentEditError] = useState<string | null>(null);
+  const [appointmentActionConfirm, setAppointmentActionConfirm] = useState<'cancel' | 'delete' | null>(null);
   const timelineSectionRef = useRef<HTMLDivElement | null>(null);
   const reminderSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -436,6 +443,22 @@ function App() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, [activeAppointment]);
+
+  useEffect(() => {
+    if (!activeAppointment) {
+      setAppointmentEditError(null);
+      setAppointmentActionConfirm(null);
+      return;
+    }
+
+    setAppointmentEditCustomerId(activeAppointment.customerId ?? '');
+    setAppointmentEditService(activeAppointment.service);
+    setAppointmentEditDate(activeAppointment.date);
+    setAppointmentEditTime(activeAppointment.time);
+    setAppointmentEditDuration(activeAppointment.duration);
+    setAppointmentEditError(null);
+    setAppointmentActionConfirm(null);
   }, [activeAppointment]);
 
   const resetBookingForm = () => {
@@ -777,20 +800,46 @@ function App() {
 
   const handleCloseAppointment = () => setActiveAppointment(null);
 
-  const handleEditFromDetails = () => {
-    if (!activeAppointment) return;
-    const customer = customers.find((c) => c.id === activeAppointment.customerId);
-    if (customer) {
-      setSelectedCustomer(customer);
+  const handleSaveAppointmentEdits = () => {
+    if (!activeAppointment) {
+      return;
     }
-    setDate(activeAppointment.date);
-    setTime(activeAppointment.time);
-    setDuration(activeAppointment.duration);
-    setService(activeAppointment.service);
-    setNotes((activeAppointment as Appointment).service ? '' : '');
-    setWhatsapp(Boolean(activeAppointment.whatsappReminder));
-    setSms(Boolean(activeAppointment.smsReminder));
-    setIsBookingOpen(true);
+
+    const selected = customers.find((customer) => customer.id === appointmentEditCustomerId);
+    if (!selected) {
+      setAppointmentEditError('Please choose a valid customer.');
+      return;
+    }
+
+    if (!appointmentEditDate || !appointmentEditTime || !appointmentEditDuration || !appointmentEditService) {
+      setAppointmentEditError('Please complete customer, service, date, start time, and duration.');
+      return;
+    }
+
+    const updatedAppointment: Appointment = {
+      ...activeAppointment,
+      customerId: selected.id,
+      name: selected.name,
+      service: appointmentEditService,
+      date: appointmentEditDate,
+      time: appointmentEditTime,
+      duration: appointmentEditDuration,
+    };
+
+    setAppointments((current) =>
+      sortAppointments(current.map((appointment) => (appointment.id === activeAppointment.id ? updatedAppointment : appointment))),
+    );
+    setActiveAppointment(null);
+  };
+
+  const handleAppointmentAction = () => {
+    if (!activeAppointment) {
+      return;
+    }
+
+    const appointmentId = activeAppointment.id;
+    setAppointments((current) => current.filter((appointment) => appointment.id !== appointmentId));
+    setAppointmentActionConfirm(null);
     setActiveAppointment(null);
   };
 
@@ -1751,132 +1800,191 @@ function App() {
           <aside
             role="dialog"
             aria-modal="true"
-            className="absolute right-0 top-0 h-full w-full max-w-xl bg-white p-6 shadow-2xl"
+            className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"
             style={{ transitionProperty: 'transform, opacity', transitionDuration: '250ms', transform: 'translateX(0)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
               <div>
-                <p className="text-xs font-semibold uppercase text-slate-400">Appointment details</p>
-                <h2 className="mt-1 text-2xl font-semibold text-slate-900">
-                  {(() => {
-                    const appt = activeAppointment as Appointment;
-                    const customer = customers.find((c) => c.id === appt.customerId) ?? null;
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (customer) openProfile(customer);
-                        }}
-                        className="text-left text-2xl font-semibold text-slate-900 hover:underline"
-                      >
-                        {customer?.name ?? appt.name}
-                      </button>
-                    );
-                  })()}
-                </h2>
+                <p className="text-xs font-semibold uppercase text-slate-400">Edit appointment</p>
+                <h2 className="mt-1 text-2xl font-semibold text-slate-900">Update booking details</h2>
               </div>
               <button onClick={handleCloseAppointment} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="mt-6 grid gap-4">
+            <div className="flex-1 overflow-y-auto px-6 py-5">
               {(() => {
                 const appt = activeAppointment as Appointment;
-                const customer = customers.find((c) => c.id === appt.customerId) ?? null;
+                const previewCustomer = customers.find((c) => c.id === appointmentEditCustomerId) ?? null;
+                const customerOptions = customers.filter((customer) => !customer.isArchived || customer.id === appt.customerId);
+
                 return (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-sm font-semibold text-slate-700">Customer</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-900">{customer?.name ?? appt.name}</p>
-                      <p className="text-sm text-slate-500">{customer?.phone ?? 'No phone'}</p>
+                      <p className="text-sm font-semibold text-slate-700">Appointment ID</p>
+                      <p className="mt-1 text-xs text-slate-500">{appt.id}</p>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <div>
-                          <p className="text-xs text-slate-400">Service</p>
-                          <p className="font-semibold text-slate-900">{appt.service}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400">Date</p>
-                          <p className="font-semibold text-slate-900">{date}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400">Time</p>
-                          <p className="font-semibold text-slate-900">{appt.time}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400">Duration</p>
-                          <p className="font-semibold text-slate-900">{appt.duration}</p>
-                        </div>
-                      </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                        <span className="mb-2 block">Customer</span>
+                        <select
+                          value={appointmentEditCustomerId}
+                          onChange={(event) => setAppointmentEditCustomerId(event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        >
+                          <option value="">Select customer</option>
+                          {customerOptions.map((customer) => (
+                            <option key={customer.id} value={customer.id}>
+                              {customer.name} ({customer.phone})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block text-sm font-medium text-slate-700">
+                        <span className="mb-2 block">Service</span>
+                        <select
+                          value={appointmentEditService}
+                          onChange={(event) => setAppointmentEditService(event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        >
+                          <option>Classic Cut</option>
+                          <option>Beard Shape</option>
+                          <option>Premium Hot Towel</option>
+                          <option>Skin Fade</option>
+                        </select>
+                      </label>
+
+                      <label className="block text-sm font-medium text-slate-700">
+                        <span className="mb-2 block">Duration</span>
+                        <select
+                          value={appointmentEditDuration}
+                          onChange={(event) => setAppointmentEditDuration(event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        >
+                          {durationOptions.map((minutes) => (
+                            <option key={minutes} value={`${minutes} mins`}>
+                              {minutes} mins
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block text-sm font-medium text-slate-700">
+                        <span className="mb-2 block">Date</span>
+                        <input
+                          type="date"
+                          value={appointmentEditDate}
+                          onChange={(event) => setAppointmentEditDate(event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium text-slate-700">
+                        <span className="mb-2 block">Start time</span>
+                        <input
+                          type="time"
+                          value={appointmentEditTime}
+                          onChange={(event) => setAppointmentEditTime(event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-slate-700 outline-none transition focus:border-blue-500"
+                        />
+                      </label>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-xs text-slate-400">Notes</p>
-                      <p className="mt-1 text-sm text-slate-700">{customer?.note ?? 'No notes'}</p>
-                    </div>
+                    {previewCustomer ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Selected customer</p>
+                        <p className="mt-2 font-semibold text-slate-900">{previewCustomer.name}</p>
+                        <p className="text-sm text-slate-500">{previewCustomer.phone}</p>
+                      </div>
+                    ) : null}
 
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
-                        <p className="text-xs text-slate-400">Previous visits</p>
-                        <p className="mt-1 font-semibold text-slate-900">{customer?.lastVisit ?? 'None'}</p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
-                        <p className="text-xs text-slate-400">Customer since</p>
-                        <p className="mt-1 font-semibold text-slate-900">Not available</p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
-                        <p className="text-xs text-slate-400">Outstanding</p>
-                        <p className="mt-1 font-semibold text-rose-600">£0.00</p>
-                      </div>
-                    </div>
+                    {appointmentEditError ? (
+                      <p className="text-sm font-medium text-rose-600">{appointmentEditError}</p>
+                    ) : null}
 
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          const phone = customers.find((c) => c.id === appt.customerId)?.phone;
-                          if (phone) window.location.href = `tel:${phone}`;
-                        }}
-                        className="w-full rounded-2xl bg-slate-900 px-4 py-4 text-sm font-semibold text-white shadow-sm"
+                        onClick={handleSaveAppointmentEdits}
+                        className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
                       >
-                        📞 Call
+                        Save Appointment
                       </button>
-
                       <button
                         type="button"
-                        onClick={() => {
-                          const phone = customers.find((c) => c.id === appt.customerId)?.phone;
-                          if (phone) window.open(`https://wa.me/${phone.replace(/\D/g, '')}`);
-                        }}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-900 shadow-sm"
+                        onClick={handleCloseAppointment}
+                        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                       >
-                        💬 WhatsApp
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleEditFromDetails}
-                        className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-sm font-semibold text-white shadow-sm"
-                      >
-                        ✏️ Edit Booking
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsBookingOpen(true);
-                          setSelectedCustomer(customers.find((c) => c.id === appt.customerId) ?? null);
-                        }}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-900 shadow-sm"
-                      >
-                        📅 Rebook
+                        Cancel
                       </button>
                     </div>
                   </div>
+                );
+              })()}
+            </div>
+
+            <div className="border-t border-slate-200 bg-white px-6 py-4">
+              {(() => {
+                const appt = activeAppointment as Appointment;
+                const previewCustomer = customers.find((c) => c.id === appointmentEditCustomerId) ?? null;
+                const summary = `${previewCustomer?.name ?? appt.name} • ${appointmentEditService} • ${appointmentEditDate} ${appointmentEditTime}`;
+
+                return (
+                  <>
+                    {appointmentActionConfirm ? (
+                      <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-sm font-semibold text-amber-900">
+                          {appointmentActionConfirm === 'delete'
+                            ? `Delete appointment: ${summary}?`
+                            : `Cancel appointment: ${summary}?`}
+                        </p>
+                        <p className="mt-1 text-xs text-amber-800">
+                          {appointmentActionConfirm === 'delete'
+                            ? 'This permanently removes only the appointment. Customer details stay untouched.'
+                            : 'No appointment status column is configured here yet, so cancel will remove this appointment for now.'}
+                        </p>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAppointmentActionConfirm(null)}
+                            className="rounded-full border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Keep Appointment
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleAppointmentAction}
+                            className={`rounded-full px-3 py-2 text-sm font-semibold text-white transition ${
+                              appointmentActionConfirm === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700'
+                            }`}
+                          >
+                            {appointmentActionConfirm === 'delete' ? 'Confirm Delete' : 'Confirm Cancel'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => setAppointmentActionConfirm('cancel')}
+                        className="w-full rounded-full bg-amber-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-600"
+                      >
+                        Cancel Appointment
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAppointmentActionConfirm('delete')}
+                        className="w-full rounded-full bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-700"
+                      >
+                        Delete Appointment
+                      </button>
+                    </div>
+                  </>
                 );
               })()}
             </div>
