@@ -104,6 +104,19 @@ export type AppointmentRecord = {
   reminder_sent?: boolean | null;
 };
 
+export const APPOINTMENTS_TABLE = 'appointments';
+export const APPOINTMENTS_TABLE_QUALIFIED = 'public.appointments';
+
+type AppointmentDebugResponse = {
+  table: string;
+  queryTarget: string;
+  data: unknown;
+  error: unknown;
+  count: number | null;
+  status: number;
+  statusText: string;
+};
+
 type AppointmentMutationResult = {
   data: AppointmentRecord | null;
   error: unknown | null;
@@ -202,45 +215,117 @@ export async function updateCustomerInSupabase(
   return { data: rows[0] ?? null, error: null, affectedRows };
 }
 
-export async function createAppointmentInSupabase(payload: AppointmentPayload) {
+export async function createAppointmentInSupabase(payload: AppointmentPayload): Promise<{
+  data: AppointmentRecord | null;
+  error: unknown | null;
+  response: AppointmentDebugResponse;
+}> {
   if (!supabaseUrl || !supabaseAnonKey) {
     const error = new Error('Cannot save appointment: Supabase environment variables are missing.');
-    return { data: null, error };
+    return {
+      data: null,
+      error,
+      response: {
+        table: APPOINTMENTS_TABLE,
+        queryTarget: APPOINTMENTS_TABLE,
+        data: null,
+        error,
+        count: null,
+        status: 0,
+        statusText: 'Supabase client not configured',
+      },
+    };
   }
 
-  const { data, error } = await supabase.from('appointments').insert(payload).select().single();
+  const { data, error, count, status, statusText } = await supabase
+    .from(APPOINTMENTS_TABLE)
+    .insert(payload)
+    .select()
+    .single();
 
   if (error) {
     console.error('Unable to save appointment to Supabase:', formatSupabaseError(error));
-    return { data: null, error };
+    return {
+      data: null,
+      error,
+      response: {
+        table: APPOINTMENTS_TABLE,
+        queryTarget: APPOINTMENTS_TABLE,
+        data,
+        error,
+        count: count ?? null,
+        status,
+        statusText,
+      },
+    };
   }
 
-  return { data: data as AppointmentRecord | null, error: null };
+  return {
+    data: data as AppointmentRecord | null,
+    error: null,
+    response: {
+      table: APPOINTMENTS_TABLE_QUALIFIED,
+      queryTarget: APPOINTMENTS_TABLE,
+      data,
+      error: null,
+      count: count ?? null,
+      status,
+      statusText,
+    },
+  };
 }
 
-export async function getAppointmentsFromSupabase(): Promise<{ data: AppointmentRecord[]; error: unknown | null }> {
+export async function getAppointmentsFromSupabase(): Promise<{
+  data: AppointmentRecord[];
+  error: unknown | null;
+  response: AppointmentDebugResponse;
+}> {
   if (!supabaseUrl || !supabaseAnonKey) {
     const error = new Error('Cannot load appointments: Supabase environment variables are missing.');
     console.error(error);
-    return { data: [], error };
+    return {
+      data: [],
+      error,
+      response: {
+        table: APPOINTMENTS_TABLE,
+        queryTarget: APPOINTMENTS_TABLE,
+        data: [],
+        error,
+        count: null,
+        status: 0,
+        statusText: 'Supabase client not configured',
+      },
+    };
   }
 
-  const { data, error } = await supabase
-    .from('appointments')
+  const { data, error, count, status, statusText } = await supabase
+    .from(APPOINTMENTS_TABLE)
     .select('*')
     .order('appointment_date', { ascending: true })
     .order('appointment_time', { ascending: true });
 
   if (error) {
     console.error('Unable to load appointments from Supabase:', formatSupabaseError(error));
-    return { data: [], error };
+    return {
+      data: [],
+      error,
+      response: {
+        table: APPOINTMENTS_TABLE,
+        queryTarget: APPOINTMENTS_TABLE,
+        data,
+        error,
+        count: count ?? null,
+        status,
+        statusText,
+      },
+    };
   }
 
   const rows = (data ?? []) as AppointmentRecord[];
 
   if (rows.length > 0) {
     console.log('Appointment table check:', {
-      table: 'appointments',
+      table: APPOINTMENTS_TABLE,
       sampleKeys: Object.keys(rows[0] ?? {}),
       expectedColumns: [
         'id',
@@ -257,7 +342,63 @@ export async function getAppointmentsFromSupabase(): Promise<{ data: Appointment
     });
   }
 
-  return { data: rows, error: null };
+  return {
+    data: rows,
+    error: null,
+    response: {
+      table: APPOINTMENTS_TABLE_QUALIFIED,
+      queryTarget: APPOINTMENTS_TABLE,
+      data,
+      error: null,
+      count: count ?? null,
+      status,
+      statusText,
+    },
+  };
+}
+
+export async function checkAppointmentsTableStatusInSupabase(): Promise<{
+  exists: boolean;
+  rowCount: number | null;
+  error: unknown | null;
+  response: AppointmentDebugResponse;
+}> {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    const error = new Error('Cannot check appointments table: Supabase environment variables are missing.');
+    return {
+      exists: false,
+      rowCount: null,
+      error,
+      response: {
+        table: APPOINTMENTS_TABLE,
+        queryTarget: APPOINTMENTS_TABLE,
+        data: null,
+        error,
+        count: null,
+        status: 0,
+        statusText: 'Supabase client not configured',
+      },
+    };
+  }
+
+  const { data, error, count, status, statusText } = await supabase
+    .from(APPOINTMENTS_TABLE)
+    .select('id', { head: true, count: 'exact' });
+
+  return {
+    exists: !error,
+    rowCount: count ?? null,
+    error,
+    response: {
+      table: APPOINTMENTS_TABLE_QUALIFIED,
+      queryTarget: APPOINTMENTS_TABLE,
+      data,
+      error,
+      count: count ?? null,
+      status,
+      statusText,
+    },
+  };
 }
 
 export async function updateAppointmentInSupabase(
@@ -271,7 +412,7 @@ export async function updateAppointmentInSupabase(
   }
 
   const { data, error, count } = await supabase
-    .from('appointments')
+    .from(APPOINTMENTS_TABLE)
     .update(payload, { count: 'exact' })
     .eq('id', appointmentId)
     .select();
@@ -294,7 +435,7 @@ export async function deleteAppointmentInSupabase(appointmentId: string): Promis
   }
 
   const { data, error, count } = await supabase
-    .from('appointments')
+    .from(APPOINTMENTS_TABLE)
     .delete({ count: 'exact' })
     .eq('id', appointmentId)
     .select('id');
@@ -315,7 +456,7 @@ export async function customerHasAppointmentsInSupabase(customerId: string): Pro
   }
 
   const { count, error } = await supabase
-    .from('appointments')
+    .from(APPOINTMENTS_TABLE)
     .select('id', { count: 'exact', head: true })
     .eq('customer_id', customerId);
 

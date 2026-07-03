@@ -1,6 +1,9 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { AlertCircle, CalendarDays, CheckCircle2, Clock3, Search, Sparkles, X } from 'lucide-react';
 import {
+  APPOINTMENTS_TABLE,
+  APPOINTMENTS_TABLE_QUALIFIED,
+  checkAppointmentsTableStatusInSupabase,
   customerHasAppointmentsInSupabase,
   createAppointmentInSupabase,
   createCustomerInSupabase,
@@ -245,6 +248,14 @@ const formatSupabaseUiError = (prefix: string, error: unknown) => {
   return `${prefix}: ${fullMessage}${policyNote}`;
 };
 
+const toDebugJson = (value: unknown) => {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
 function App() {
   const today = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
@@ -288,6 +299,10 @@ function App() {
   const [sms, setSms] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [appointmentSyncError, setAppointmentSyncError] = useState<string | null>(null);
+  const [startupLoadResponse, setStartupLoadResponse] = useState<string>('Waiting for startup load...');
+  const [insertResponse, setInsertResponse] = useState<string>('No appointment insert attempted yet.');
+  const [tableStatusResponse, setTableStatusResponse] = useState<string>('No table check run yet.');
+  const [lastSupabaseErrorResponse, setLastSupabaseErrorResponse] = useState<string>('No Supabase errors captured yet.');
   const [currentMinutes, setCurrentMinutes] = useState(() => {
     const now = new Date();
     return now.getHours() * 60 + now.getMinutes();
@@ -413,10 +428,11 @@ function App() {
   };
 
   const reloadAppointments = async (customerList: Customer[] = customers) => {
-    const { data, error } = await getAppointmentsFromSupabase();
+    const { data, error, response } = await getAppointmentsFromSupabase();
 
     if (error) {
       setAppointmentSyncError(formatSupabaseUiError('Could not load appointments', error));
+      setLastSupabaseErrorResponse(toDebugJson(response));
       return;
     }
 
@@ -444,12 +460,15 @@ function App() {
       if (appointmentResult.error) {
         setAppointments([]);
         setAppointmentSyncError(formatSupabaseUiError('Could not load appointments', appointmentResult.error));
+        setStartupLoadResponse(toDebugJson(appointmentResult.response));
+        setLastSupabaseErrorResponse(toDebugJson(appointmentResult.response));
         return;
       }
 
       const customerLookup = new Map(mappedCustomers.map((customer) => [customer.id, customer]));
       setAppointments(sortAppointments(appointmentResult.data.map((record) => mapAppointmentRecord(record, customerLookup))));
       setAppointmentSyncError(null);
+      setStartupLoadResponse(toDebugJson(appointmentResult.response));
     };
 
     void loadData();
@@ -834,13 +853,23 @@ function App() {
       notes,
       whatsapp_reminder: whatsapp,
       sms_reminder: sms,
+      reminder_sent: false,
     };
 
-    const { data: savedAppointment, error } = await createAppointmentInSupabase(appointmentPayload);
+    const { data: savedAppointment, error, response } = await createAppointmentInSupabase(appointmentPayload);
+    setInsertResponse(toDebugJson(response));
 
     if (!savedAppointment || error) {
       setAppointmentSyncError(formatSupabaseUiError('Could not save appointment', error));
+      setLastSupabaseErrorResponse(toDebugJson(response));
       return;
+    }
+
+    const tableStatus = await checkAppointmentsTableStatusInSupabase();
+    setTableStatusResponse(toDebugJson(tableStatus.response));
+
+    if (tableStatus.error) {
+      setLastSupabaseErrorResponse(toDebugJson(tableStatus.response));
     }
 
     await reloadAppointments();
@@ -888,6 +917,7 @@ function App() {
 
     if (result.error) {
       setAppointmentEditError(formatSupabaseUiError('Could not save appointment changes', result.error));
+      setLastSupabaseErrorResponse(toDebugJson(result.error));
       return;
     }
 
@@ -911,6 +941,7 @@ function App() {
 
     if (result.error) {
       setAppointmentEditError(formatSupabaseUiError('Could not remove appointment', result.error));
+      setLastSupabaseErrorResponse(toDebugJson(result.error));
       return;
     }
 
@@ -930,6 +961,7 @@ function App() {
 
     if (result.error) {
       setAppointmentSyncError(formatSupabaseUiError('Could not mark reminder as sent', result.error));
+      setLastSupabaseErrorResponse(toDebugJson(result.error));
       return;
     }
 
@@ -983,6 +1015,20 @@ function App() {
         </header>
 
         <main className="space-y-6">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-xs text-amber-900">
+            <p className="font-semibold">Appointment persistence debug</p>
+            <p className="mt-2 font-medium">Supabase table used: {APPOINTMENTS_TABLE_QUALIFIED}</p>
+            <p className="mt-1 text-[11px] text-amber-800">Supabase query target: from('{APPOINTMENTS_TABLE}')</p>
+            <p className="mt-3 font-semibold">Startup select/load response:</p>
+            <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-amber-200 bg-white p-2">{startupLoadResponse}</pre>
+            <p className="mt-3 font-semibold">Insert response:</p>
+            <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-amber-200 bg-white p-2">{insertResponse}</pre>
+            <p className="mt-3 font-semibold">Table existence + row count check after save:</p>
+            <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-amber-200 bg-white p-2">{tableStatusResponse}</pre>
+            <p className="mt-3 font-semibold">Last Supabase error response:</p>
+            <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-amber-200 bg-white p-2">{lastSupabaseErrorResponse}</pre>
+          </div>
+
           {/* Debug: Supabase key status */}
           <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600">
             <span>🔑 Supabase key loaded: {import.meta.env.VITE_SUPABASE_ANON_KEY ? 'yes' : 'no'}</span>
