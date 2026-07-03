@@ -191,11 +191,26 @@ const getNextAvailableTime = (appointments: Appointment[], desiredDuration: stri
   return null;
 };
 
-const cleanPhoneNumber = (phone: string) => phone.replace(/\D/g, '');
+const formatUkPhoneForLinks = (phone: string) => {
+  const cleaned = phone.replace(/[\s()-]/g, '');
 
-const getReminderMessage = (time: string) => {
-  return `Hello! Just a friendly reminder that you have an appointment at The Bell Street Barbers tomorrow at ${time}.\n\nI look forward to seeing you.\n\nKind regards,\nJamie`;
+  if (cleaned.startsWith('+44')) {
+    return cleaned.slice(1);
+  }
+
+  if (cleaned.startsWith('44')) {
+    return cleaned;
+  }
+
+  if (cleaned.startsWith('0')) {
+    return `44${cleaned.slice(1)}`;
+  }
+
+  return cleaned.replace(/\+/g, '');
 };
+
+const getAppointmentMessage = (customerName: string, date: string, time: string, service: string) =>
+  `Hi ${customerName}, just confirming your appointment at Bell Street Barbers on ${date} at ${time} for ${service}. Please arrive on time with freshly washed hair. If you need to change anything, please let me know. Thanks, Jamie.`;
 
 const formatSupabaseUiError = (prefix: string, error: unknown) => {
   const supabaseError = error as {
@@ -870,18 +885,18 @@ function App() {
     );
   };
 
-  const openWhatsAppReminder = (phone: string, time: string) => {
-    const cleaned = cleanPhoneNumber(phone);
+  const openWhatsAppReminder = (phone: string, customerName: string, appointmentDate: string, appointmentTime: string, appointmentService: string) => {
+    const cleaned = formatUkPhoneForLinks(phone);
     if (!cleaned) return;
-    const encoded = encodeURIComponent(getReminderMessage(time));
+    const encoded = encodeURIComponent(getAppointmentMessage(customerName, appointmentDate, appointmentTime, appointmentService));
     window.open(`https://wa.me/${cleaned}?text=${encoded}`, '_blank');
   };
 
-  const openSmsReminder = (phone: string, time: string) => {
-    const cleaned = cleanPhoneNumber(phone);
+  const openSmsReminder = (phone: string, customerName: string, appointmentDate: string, appointmentTime: string, appointmentService: string) => {
+    const cleaned = formatUkPhoneForLinks(phone);
     if (!cleaned) return;
-    const encoded = encodeURIComponent(getReminderMessage(time));
-    window.location.href = `sms:${cleaned}?body=${encoded}`;
+    const encoded = encodeURIComponent(getAppointmentMessage(customerName, appointmentDate, appointmentTime, appointmentService));
+    window.location.href = `sms:+${cleaned}?body=${encoded}`;
   };
 
   return (
@@ -1187,14 +1202,14 @@ function App() {
                           <div className="grid gap-3 sm:grid-cols-3">
                             <button
                               type="button"
-                              onClick={() => openWhatsAppReminder(phone, appointment.time)}
+                              onClick={() => openWhatsAppReminder(phone, appointment.name, appointment.date, appointment.time, appointment.service)}
                               className="rounded-[24px] bg-emerald-600 px-4 py-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
                             >
                               WhatsApp
                             </button>
                             <button
                               type="button"
-                              onClick={() => openSmsReminder(phone, appointment.time)}
+                              onClick={() => openSmsReminder(phone, appointment.name, appointment.date, appointment.time, appointment.service)}
                               className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-100"
                             >
                               SMS
@@ -2066,7 +2081,8 @@ function App() {
                           type="button"
                           onClick={() => {
                             const phone = customers.find((c) => c.id === appt.customerId)?.phone;
-                            if (phone) window.location.href = `tel:${phone}`;
+                            const formatted = phone ? formatUkPhoneForLinks(phone) : '';
+                            if (formatted) window.location.href = `tel:+${formatted}`;
                           }}
                           className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
                         >
@@ -2076,11 +2092,25 @@ function App() {
                           type="button"
                           onClick={() => {
                             const phone = customers.find((c) => c.id === appt.customerId)?.phone;
-                            if (phone) window.open(`https://wa.me/${phone.replace(/\D/g, '')}`);
+                            const formatted = phone ? formatUkPhoneForLinks(phone) : '';
+                            const encoded = encodeURIComponent(getAppointmentMessage(previewCustomer?.name ?? appt.name, appt.date, appt.time, appt.service));
+                            if (formatted) window.open(`https://wa.me/${formatted}?text=${encoded}`, '_blank');
                           }}
                           className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
                         >
                           ⚪ WhatsApp
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const phone = customers.find((c) => c.id === appt.customerId)?.phone;
+                            const formatted = phone ? formatUkPhoneForLinks(phone) : '';
+                            const encoded = encodeURIComponent(getAppointmentMessage(previewCustomer?.name ?? appt.name, appt.date, appt.time, appt.service));
+                            if (formatted) window.location.href = `sms:+${formatted}?body=${encoded}`;
+                          }}
+                          className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+                        >
+                          SMS
                         </button>
                         <button
                           type="button"
