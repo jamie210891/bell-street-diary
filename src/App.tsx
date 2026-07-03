@@ -276,6 +276,7 @@ function App() {
   const [appointmentEditTime, setAppointmentEditTime] = useState('10:30');
   const [appointmentEditDuration, setAppointmentEditDuration] = useState('45 mins');
   const [appointmentEditError, setAppointmentEditError] = useState<string | null>(null);
+  const [isEditingAppointment, setIsEditingAppointment] = useState(false);
   const [appointmentActionConfirm, setAppointmentActionConfirm] = useState<'cancel' | 'delete' | null>(null);
   const timelineSectionRef = useRef<HTMLDivElement | null>(null);
   const reminderSectionRef = useRef<HTMLDivElement | null>(null);
@@ -438,7 +439,11 @@ function App() {
     if (!activeAppointment) return undefined;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setActiveAppointment(null);
+      if (e.key === 'Escape') {
+        setIsEditingAppointment(false);
+        setAppointmentActionConfirm(null);
+        setActiveAppointment(null);
+      }
     };
 
     window.addEventListener('keydown', onKey);
@@ -447,6 +452,7 @@ function App() {
 
   useEffect(() => {
     if (!activeAppointment) {
+      setIsEditingAppointment(false);
       setAppointmentEditError(null);
       setAppointmentActionConfirm(null);
       return;
@@ -798,7 +804,17 @@ function App() {
     setShowSuccess(true);
   };
 
-  const handleCloseAppointment = () => setActiveAppointment(null);
+  const handleCloseAppointment = () => {
+    setIsEditingAppointment(false);
+    setAppointmentActionConfirm(null);
+    setActiveAppointment(null);
+  };
+
+  const handleOpenEditAppointment = () => {
+    setAppointmentActionConfirm(null);
+    setAppointmentEditError(null);
+    setIsEditingAppointment(true);
+  };
 
   const handleSaveAppointmentEdits = () => {
     if (!activeAppointment) {
@@ -829,6 +845,8 @@ function App() {
     setAppointments((current) =>
       sortAppointments(current.map((appointment) => (appointment.id === activeAppointment.id ? updatedAppointment : appointment))),
     );
+    setIsEditingAppointment(false);
+    setAppointmentActionConfirm(null);
     setActiveAppointment(null);
   };
 
@@ -839,6 +857,7 @@ function App() {
 
     const appointmentId = activeAppointment.id;
     setAppointments((current) => current.filter((appointment) => appointment.id !== appointmentId));
+    setIsEditingAppointment(false);
     setAppointmentActionConfirm(null);
     setActiveAppointment(null);
   };
@@ -1806,8 +1825,10 @@ function App() {
           >
             <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
               <div>
-                <p className="text-xs font-semibold uppercase text-slate-400">Edit appointment</p>
-                <h2 className="mt-1 text-2xl font-semibold text-slate-900">Update booking details</h2>
+                <p className="text-xs font-semibold uppercase text-slate-400">{isEditingAppointment ? 'Edit booking' : 'Appointment details'}</p>
+                <h2 className="mt-1 text-2xl font-semibold text-slate-900">
+                  {isEditingAppointment ? 'Update booking details' : 'Appointment details'}
+                </h2>
               </div>
               <button onClick={handleCloseAppointment} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
                 <X className="h-5 w-5" />
@@ -1819,6 +1840,72 @@ function App() {
                 const appt = activeAppointment as Appointment;
                 const previewCustomer = customers.find((c) => c.id === appointmentEditCustomerId) ?? null;
                 const customerOptions = customers.filter((customer) => !customer.isArchived || customer.id === appt.customerId);
+
+                if (!isEditingAppointment) {
+                  return (
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Customer</p>
+                        <p className="mt-2 text-lg font-semibold text-slate-900">{previewCustomer?.name ?? appt.name}</p>
+                        <p className="text-sm text-slate-500">{previewCustomer?.phone ?? 'No phone provided'}</p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <p className="text-xs text-slate-400">Service</p>
+                            <p className="font-semibold text-slate-900">{appt.service}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400">Date</p>
+                            <p className="font-semibold text-slate-900">{appt.date}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400">Start time</p>
+                            <p className="font-semibold text-slate-900">{appt.time}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400">Duration</p>
+                            <p className="font-semibold text-slate-900">{appt.duration}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {appointmentActionConfirm ? (
+                        <div className={`rounded-2xl border p-4 ${appointmentActionConfirm === 'delete' ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'}`}>
+                          <p className={`text-sm font-semibold ${appointmentActionConfirm === 'delete' ? 'text-rose-800' : 'text-amber-900'}`}>
+                            {appointmentActionConfirm === 'delete'
+                              ? `Delete appointment for ${previewCustomer?.name ?? appt.name} (${appt.service}) at ${appt.date} ${appt.time}?`
+                              : `Cancel appointment for ${previewCustomer?.name ?? appt.name} (${appt.service}) at ${appt.date} ${appt.time}?`}
+                          </p>
+                          <p className={`mt-1 text-xs ${appointmentActionConfirm === 'delete' ? 'text-rose-700' : 'text-amber-800'}`}>
+                            {appointmentActionConfirm === 'delete'
+                              ? 'This permanently removes only this appointment. Customer details are not deleted.'
+                              : 'No cancellation status exists yet, so this will remove only this appointment for now.'}
+                          </p>
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setAppointmentActionConfirm(null)}
+                              className="rounded-full border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                            >
+                              Keep Appointment
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAppointmentAction}
+                              className={`rounded-full px-3 py-2 text-sm font-semibold text-white transition ${
+                                appointmentActionConfirm === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700'
+                              }`}
+                            >
+                              {appointmentActionConfirm === 'delete' ? 'Confirm Delete' : 'Confirm Cancel'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
 
                 return (
                   <div className="space-y-4">
@@ -1912,16 +1999,47 @@ function App() {
                         onClick={handleSaveAppointmentEdits}
                         className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
                       >
-                        Save Appointment
+                        Save Changes
                       </button>
                       <button
                         type="button"
-                        onClick={handleCloseAppointment}
+                        onClick={() => {
+                          setAppointmentEditError(null);
+                          setAppointmentActionConfirm(null);
+                          setIsEditingAppointment(false);
+                        }}
                         className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                       >
                         Cancel
                       </button>
                     </div>
+
+                    {appointmentActionConfirm === 'delete' ? (
+                      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                        <p className="text-sm font-semibold text-rose-800">
+                          Delete appointment for {previewCustomer?.name ?? appt.name} ({appointmentEditService}) at {appointmentEditDate} {appointmentEditTime}?
+                        </p>
+                        <p className="mt-1 text-xs text-rose-700">
+                          This permanently removes only this appointment. Customer details are not deleted.
+                        </p>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAppointmentActionConfirm(null)}
+                            className="rounded-full border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleAppointmentAction}
+                            className="rounded-full bg-rose-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+                          >
+                            Confirm Delete
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 );
               })()}
@@ -1931,51 +2049,10 @@ function App() {
               {(() => {
                 const appt = activeAppointment as Appointment;
                 const previewCustomer = customers.find((c) => c.id === appointmentEditCustomerId) ?? null;
-                const summary = `${previewCustomer?.name ?? appt.name} • ${appointmentEditService} • ${appointmentEditDate} ${appointmentEditTime}`;
 
                 return (
                   <>
-                    {appointmentActionConfirm ? (
-                      <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
-                        <p className="text-sm font-semibold text-amber-900">
-                          {appointmentActionConfirm === 'delete'
-                            ? `Delete appointment: ${summary}?`
-                            : `Cancel appointment: ${summary}?`}
-                        </p>
-                        <p className="mt-1 text-xs text-amber-800">
-                          {appointmentActionConfirm === 'delete'
-                            ? 'This permanently removes only the appointment. Customer details stay untouched.'
-                            : 'No appointment status column is configured here yet, so cancel will remove this appointment for now.'}
-                        </p>
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setAppointmentActionConfirm(null)}
-                            className="rounded-full border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                          >
-                            Keep Appointment
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleAppointmentAction}
-                            className={`rounded-full px-3 py-2 text-sm font-semibold text-white transition ${
-                              appointmentActionConfirm === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700'
-                            }`}
-                          >
-                            {appointmentActionConfirm === 'delete' ? 'Confirm Delete' : 'Confirm Cancel'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => setAppointmentActionConfirm('cancel')}
-                        className="w-full rounded-full bg-amber-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-600"
-                      >
-                        Cancel Appointment
-                      </button>
+                    {isEditingAppointment ? (
                       <button
                         type="button"
                         onClick={() => setAppointmentActionConfirm('delete')}
@@ -1983,7 +2060,55 @@ function App() {
                       >
                         Delete Appointment
                       </button>
-                    </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const phone = customers.find((c) => c.id === appt.customerId)?.phone;
+                            if (phone) window.location.href = `tel:${phone}`;
+                          }}
+                          className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+                        >
+                          ⬛ Call
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const phone = customers.find((c) => c.id === appt.customerId)?.phone;
+                            if (phone) window.open(`https://wa.me/${phone.replace(/\D/g, '')}`);
+                          }}
+                          className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+                        >
+                          ⚪ WhatsApp
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleOpenEditAppointment}
+                          className="w-full rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                        >
+                          🔵 Edit Booking
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAppointmentActionConfirm('cancel')}
+                          className="w-full rounded-full bg-amber-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-600"
+                        >
+                          🟠 Cancel Appointment
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAppointmentActionConfirm('delete')}
+                          className="w-full rounded-full bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-700"
+                        >
+                          🔴 Delete Appointment
+                        </button>
+                      </div>
+                    )}
+
+                    {!isEditingAppointment ? (
+                      <p className="mt-2 text-xs text-slate-500">Selected: {previewCustomer?.name ?? appt.name} • {appt.service} • {appt.date} {appt.time}</p>
+                    ) : null}
                   </>
                 );
               })()}
